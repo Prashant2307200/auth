@@ -20,7 +20,7 @@ func ParseId(r *http.Request) (int64, error) {
 
 	id, err := strconv.ParseInt(rawId, 10, 64)
 	if err != nil {
-		return 0, errors.New("id must be an valid integer")
+		return 0, errors.New("id must be a valid integer")
 	}
 
 	return id, nil

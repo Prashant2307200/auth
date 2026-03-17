@@ -42,6 +42,23 @@ func GeneralMessage(message string) Response {
 	}
 }
 
+// SuccessResponse represents a successful API response
+type SuccessResponse struct {
+	Status  string      `json:"status"`
+	Message string      `json:"message,omitempty"`
+	Data    interface{} `json:"data,omitempty"`
+}
+
+// WriteSuccess writes a standardized success response
+func WriteSuccess(w http.ResponseWriter, statusCode int, message string, data interface{}) error {
+	response := SuccessResponse{
+		Status:  "success",
+		Message: message,
+		Data:    data,
+	}
+	return WriteJson(w, statusCode, response)
+}
+
 func ValidationError[T any](entity *T) (error) {
 
 	if err := validator.New().Struct(entity); err != nil {

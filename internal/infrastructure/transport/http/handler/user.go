@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"database/sql"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -48,10 +47,8 @@ func (h *UserHandler) searchAll(w http.ResponseWriter, r *http.Request) {
 
 	id, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
-		if err == sql.ErrNoRows {
-			response.WriteJson(w, http.StatusBadRequest, response.GeneralError(errors.New("user not found with this search")))
-		}
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		slog.Error("Failed to get user ID from context", slog.Any("error", err))
+		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("authentication required")))
 		return
 	}
 
@@ -81,10 +78,7 @@ func (h *UserHandler) deleteById(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.WriteJson(w, http.StatusOK, map[string]string{
-		"status":  "success",
-		"message": "user deleted successfully",
-	})
+	response.WriteSuccess(w, http.StatusOK, "user deleted successfully", nil)
 }
 
 func (h *UserHandler) updateById(w http.ResponseWriter, r *http.Request) {
@@ -110,10 +104,7 @@ func (h *UserHandler) updateById(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.WriteJson(w, http.StatusOK, map[string]string{
-		"status":  "success",
-		"message": "user updated successfully",
-	})
+	response.WriteSuccess(w, http.StatusOK, "user updated successfully", nil)
 }
 
 func (h *UserHandler) create(w http.ResponseWriter, r *http.Request) {
@@ -132,10 +123,7 @@ func (h *UserHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.WriteJson(w, http.StatusOK, map[string]string{
-		"status":  "success",
-		"message": "user created successfully",
-	})
+	response.WriteSuccess(w, http.StatusOK, "user created successfully", nil)
 }
 
 func (h *UserHandler) getById(w http.ResponseWriter, r *http.Request) {

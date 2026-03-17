@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"database/sql"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -35,21 +34,31 @@ func (h *AuthHandler) RegisterRoutes(mux *http.ServeMux) {
 
 func (h *AuthHandler) register(w http.ResponseWriter, r *http.Request) {
 
-	user, err := request.ParseJSON[entity.User](r)
+	req, err := request.ParseJSON[entity.RegisterRequest](r)
 	if err != nil {
 		slog.Error("Error parsing JSON", slog.Any("error", err))
 		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
 		return
 	}
 
-	err = response.ValidationError(user)
-	if err != nil {
+	if err := response.ValidationError(req); err != nil {
 		slog.Error("Error validating JSON", slog.Any("error", err))
 		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
 		return
 	}
 
-	access_token, refresh_token, err := h.UC.RegisterUser(r.Context(), user)
+	user := &entity.User{
+		Username:   req.Username,
+		Email:      req.Email,
+		Password:   req.Password,
+		ProfilePic: req.ProfilePic,
+		Role:       req.Role,
+	}
+	opts := &usecase.RegisterOptions{
+		InviteToken:  req.InviteToken,
+		BusinessSlug: req.BusinessSlug,
+	}
+	access_token, refresh_token, err := h.UC.RegisterUser(r.Context(), user, opts)
 	if err != nil {
 		slog.Error("Error registering user", slog.Any("error", err))
 		response.WriteJson(w, http.StatusInternalServerError, response.GeneralError(err))
@@ -57,10 +66,7 @@ func (h *AuthHandler) register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.SetTokenCookies(w, access_token, refresh_token, h.ENV)
-	response.WriteJson(w, http.StatusOK, map[string]string{
-		"status":  "success",
-		"message": "user registered successfully",
-	})
+	response.WriteSuccess(w, http.StatusOK, "user registered successfully", nil)
 }
 
 func (h *AuthHandler) login(w http.ResponseWriter, r *http.Request) {
@@ -81,48 +87,41 @@ func (h *AuthHandler) login(w http.ResponseWriter, r *http.Request) {
 
 	access_token, refresh_token, err := h.UC.LoginUser(r.Context(), user.Email, user.Password)
 	if err != nil {
-		slog.Error("Error logging in user", slog.Any("error", err))
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		slog.Error("Error logging in user", slog.String("email", user.Email), slog.Any("error", err))
+		// Don't expose whether user exists or password is wrong for security
+		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("invalid email or password")))
 		return
 	}
 
 	slog.Info("User logged in")
 	response.SetTokenCookies(w, access_token, refresh_token, h.ENV)
-	response.WriteJson(w, http.StatusOK, map[string]string{
-		"status":  "success",
-		"message": "user logged in successfully",
-	})
+	response.WriteSuccess(w, http.StatusOK, "user logged in successfully", nil)
 }
 
 func (h *AuthHandler) logout(w http.ResponseWriter, r *http.Request) {
-
 	id, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
-		if err == sql.ErrNoRows {
-			response.WriteJson(w, http.StatusBadRequest, response.GeneralError(errors.New("user not found")))
-		}
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		slog.Error("Failed to get user ID from context", slog.Any("error", err))
+		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("authentication required")))
 		return
 	}
 
-	h.UC.LogoutUser(r.Context(), id)
+	err = h.UC.LogoutUser(r.Context(), id)
+	if err != nil {
+		slog.Error("Failed to logout user", slog.Int64("user_id", id), slog.Any("error", err))
+		response.WriteJson(w, http.StatusInternalServerError, response.GeneralError(err))
+		return
+	}
 
 	response.DeleteTokenCookies(w, h.ENV)
-
-	response.WriteJson(w, http.StatusOK, map[string]string{
-		"status":  "success",
-		"message": "user logged out successfully",
-	})
+	response.WriteSuccess(w, http.StatusOK, "user logged out successfully", nil)
 }
 
 func (h *AuthHandler) profile(w http.ResponseWriter, r *http.Request) {
-
 	id, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
-		if err == sql.ErrNoRows {
-			response.WriteJson(w, http.StatusBadRequest, response.GeneralError(errors.New("user not found")))
-		}
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		slog.Error("Failed to get user ID from context", slog.Any("error", err))
+		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("authentication required")))
 		return
 	}
 
@@ -137,13 +136,10 @@ func (h *AuthHandler) profile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) updateProfile(w http.ResponseWriter, r *http.Request) {
-
 	id, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
-		if err == sql.ErrNoRows {
-			response.WriteJson(w, http.StatusBadRequest, response.GeneralError(errors.New("user not found")))
-		}
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		slog.Error("Failed to get user ID from context", slog.Any("error", err))
+		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("authentication required")))
 		return
 	}
 
@@ -176,20 +172,14 @@ func (h *AuthHandler) updateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.WriteJson(w, http.StatusOK, map[string]string{
-		"status":  "success",
-		"message": "user profile updated successfully",
-	})
+	response.WriteSuccess(w, http.StatusOK, "user profile updated successfully", nil)
 }
 
 func (h *AuthHandler) deleteProfile(w http.ResponseWriter, r *http.Request) {
-
 	id, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
-		if err == sql.ErrNoRows {
-			response.WriteJson(w, http.StatusBadRequest, response.GeneralError(errors.New("user not found")))
-		}
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		slog.Error("Failed to get user ID from context", slog.Any("error", err))
+		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("authentication required")))
 		return
 	}
 
@@ -198,10 +188,7 @@ func (h *AuthHandler) deleteProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.WriteJson(w, http.StatusOK, map[string]string{
-		"status":  "success",
-		"message": "user profile deleted successfully",
-	})
+	response.WriteSuccess(w, http.StatusOK, "user profile deleted successfully", nil)
 }
 
 func (h *AuthHandler) refresh(w http.ResponseWriter, r *http.Request) {
@@ -219,11 +206,7 @@ func (h *AuthHandler) refresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.SetTokenCookies(w, access, refresh, h.ENV)
-
-	response.WriteJson(w, http.StatusOK, map[string]string{
-		"status":  "success",
-		"message": "session refreshed successfully",
-	})
+	response.WriteSuccess(w, http.StatusOK, "session refreshed successfully", nil)
 }
 
 func (h *AuthHandler) publicKey(w http.ResponseWriter, r *http.Request) {
@@ -236,5 +219,7 @@ func (h *AuthHandler) publicKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/x-pem-file")
-	w.Write(pubKey)
+	if _, err := w.Write(pubKey); err != nil {
+		slog.Error("Failed to write public key response", slog.Any("error", err))
+	}
 }

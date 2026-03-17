@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: auth-postgres
+    environment:
+      POSTGRES_USER: auth_user
+      POSTGRES_PASSWORD: auth_password
+      POSTGRES_DB: auth_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auth_user -d auth_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - auth-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: auth-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - auth-network
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: auth-service
+    ports:
+      - "8080:8080"
+    environment:
+      # Config path
+      CONFIG_PATH: /app/config/docker.yaml
+      
+      # Database
+      POSTGRES_URI: "postgresql://auth_user:auth_password@postgres:5432/auth_db?sslmode=disable"
+      
+      # Redis
+      REDIS_ADDRESS: "redis:6379"
+      REDIS_USERNAME: ""
+      REDIS_PASSWORD: ""
+      
+      # Environment
+      ENV: "dev"
+      
+      # Secrets (change these in production!)
+      ACCESS_TOKEN_SECRET: "kRbZnaqqtfk7xHklLwPEf/bt+OsvxEFgoNNiPkyoD8C9+4pHRbiPS6vdv1nGzPR+I3L6Sy9u3c/iPLD7fQqR7g=="
+      REFRESH_TOKEN_SECRET: "your-refresh-token-secret-change-in-production"
+      COOKIE_SECRET: "your-cookie-secret-change-in-production"
+      
+      # Cloudinary
+      NAME: "dyrb0ytef"
+      API_KEY: "888923427284328"
+      API_SECRET: "wDYpMIwf_og6dKfEgAfmqes1a9w"
+    volumes:
+      - ./config:/app/config:ro
+      - ./keys:/app/keys:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - auth-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  auth-network:
+    driver: bridge

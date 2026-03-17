@@ -23,7 +23,7 @@ func Authenticate(tokenService *service.JWTTokenService, env string) func(http.H
 
 			path := r.URL.Path
 
-			if strings.HasPrefix(path, "/api/v1/auth/") && (strings.Contains(path, "login") || strings.Contains(path, "register") || strings.Contains(path, "refresh")) {
+			if strings.HasPrefix(path, "/api/v1/auth/") && (strings.Contains(path, "login") || strings.Contains(path, "register") || strings.Contains(path, "refresh") || strings.Contains(path, "public-key")) {
 				next.ServeHTTP(w, r.WithContext(ctxWithTimeout))
 				return
 			}
@@ -49,7 +49,7 @@ func Authenticate(tokenService *service.JWTTokenService, env string) func(http.H
 func GetUserIDFromContext(ctx context.Context) (int64, error) {
 	user, ok := ctx.Value(userContextKey).(int64)
 	if !ok {
-		return 0, errors.New("something went wrong")
+		return 0, errors.New("user ID not found in request context - authentication middleware may not have run")
 	}
 	return user, nil
 }

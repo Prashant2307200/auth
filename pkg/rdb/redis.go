@@ -2,8 +2,8 @@ package rdb
 
 import (
 	"context"
-	"crypto/tls" 
-	"log"
+	"crypto/tls"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -26,18 +26,19 @@ func Connect(Addr string, User string, Pass string) (*Redis, error) {
 		TLSConfig: &tls.Config{},
 	})
 
-	if  _, err := rdb.Ping(ctx).Result(); err != nil {
-		log.Fatal("Failed to connect to the redis server.")
-		return nil, err
+	if _, err := rdb.Ping(ctx).Result(); err != nil {
+		return nil, fmt.Errorf("failed to connect to redis server at %s: %w", Addr, err)
 	}
-	slog.Info("Connected to the redis server.")
+	slog.Info("Connected to the redis server")
 
-	err := rdb.FlushAll(context.Background()).Err()
-	if err != nil {
-		log.Fatal("Failed to flush all keys in the redis server.")
-		return nil, err
-	}
-	slog.Info("Flushed all keys in the redis server.")
+	// WARNING: FlushAll should NEVER be called in production!
+	// This is only for development/testing. Remove this in production.
+	// Uncomment only if you need to clear Redis during development:
+	// err := rdb.FlushAll(context.Background()).Err()
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to flush redis keys: %w", err)
+	// }
+	// slog.Info("Flushed all keys in the redis server.")
 
 	return &Redis{Rdb: rdb}, nil
 }

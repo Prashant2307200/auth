@@ -25,9 +25,12 @@ import (
 func main() {
 	cfg := config.MustLoad()
 
-	db, err := db.Connect(cfg.PostgresUri)
+	database, err := db.Connect(cfg.PostgresUri)
 	if err != nil {
 		log.Fatalf("Failed to initialize the storage: %s", err.Error())
+	}
+	if err := db.RunMigrations(database.Db); err != nil {
+		log.Fatalf("Failed to run migrations: %s", err.Error())
 	}
 
 	rdb, err := rdb.Connect(cfg.Redis.Addr, cfg.Redis.User, cfg.Redis.Pass)
@@ -36,18 +39,24 @@ func main() {
 	}
 
 	defer func() {
-		if err := db.Db.Close(); err != nil {
-			log.Fatalf("Failed to close the storage: %s", err.Error())
+		if err := database.Db.Close(); err != nil {
+			slog.Error("Failed to close database connection", slog.Any("error", err))
 		}
 		if err := rdb.Rdb.Close(); err != nil {
-			log.Fatalf("Failed to close the cache: %s", err.Error())
+			slog.Error("Failed to close redis connection", slog.Any("error", err))
 		}
-		slog.Info("Cleanup successfull.")
+		slog.Info("Cleanup successful.")
 	}()
 
-	userRepo, err := repository.NewUserRepo(db.Db)
+	userRepo, err := repository.NewUserRepo(database.Db)
 	if err != nil {
 		log.Fatalf("Failed to initialize the user repository: %s", err.Error())
+		return
+	}
+
+	businessRepo, err := repository.NewBusinessRepo(database.Db)
+	if err != nil {
+		log.Fatalf("Failed to initialize the business repository: %s", err.Error())
 		return
 	}
 
@@ -66,15 +75,23 @@ func main() {
 	slog.Info("Seeded the users.")
 
 	cloudService := service.NewCoudinaryUploadService(cloudinary.Cld)
-	tokenService := service.NewJWTTokenService(rdb.Rdb, "keys/public.pem", "keys/private.pem", cfg.Secrets.RefreshTokenSecret)
+	tokenService, err := service.NewJWTTokenService(rdb.Rdb, "keys/public.pem", "keys/private.pem", cfg.Secrets.RefreshTokenSecret)
+	if err != nil {
+		log.Fatalf("Failed to initialize token service: %s", err.Error())
+	}
 
 	userUseCase := usecase.NewUserUseCase(userRepo)
 	userHandler := handler.NewUserHandler(userUseCase)
+	businessUseCase := usecase.NewBusinessUseCase(businessRepo, userRepo)
+	businessHandler := handler.NewBusinessHandler(businessUseCase)
 
 	userRouter := http.NewServeMux()
 	userHandler.RegisterRoutes(userRouter)
 
-	authUseCase := usecase.NewAuthUseCase(userRepo, tokenService, cloudService)
+	businessRouter := http.NewServeMux()
+	businessHandler.RegisterRoutes(businessRouter)
+
+	authUseCase := usecase.NewAuthUseCase(userRepo, businessRepo, tokenService, cloudService)
 	authHandler := handler.NewAuthHandler(authUseCase, cfg.Env)
 
 	authRouter := http.NewServeMux()
@@ -83,6 +100,7 @@ func main() {
 	router := http.NewServeMux()
 	router.Handle("/auth/", http.StripPrefix("/auth", authRouter))
 	router.Handle("/users/", http.StripPrefix("/users", userRouter))
+	router.Handle("/business/", http.StripPrefix("/business", businessRouter))
 
 	v1 := http.NewServeMux()
 	authMiddleware := middleware.Authenticate(tokenService, cfg.Env)
@@ -101,9 +119,12 @@ func main() {
 	go func() {
 		err := server.ListenAndServe()
 		if err != nil && err != http.ErrServerClosed {
+			slog.Error("Server failed to start", slog.Any("error", err))
 			log.Fatal("Failed to start server.")
 		}
-		slog.Info("Server stopped in the background.", slog.String("error", err.Error()))
+		if err == http.ErrServerClosed {
+			slog.Info("Server stopped gracefully.")
+		}
 	}()
 
 	<-done
