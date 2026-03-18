@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package authgrpc;
+
+option go_package = "github.com/Prashant2307200/auth-service/internal/transport/grpc/proto;authgrpc";
+
+service PublicKeyService {
+  rpc GetPublicKey(GetPublicKeyRequest) returns (GetPublicKeyResponse) {}
+}
+
+message GetPublicKeyRequest {
+  int64 business_id = 1;
+}
+
+message GetPublicKeyResponse {
+  string pem_key = 1;
+  string created_at = 2;
+}

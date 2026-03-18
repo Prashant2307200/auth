@@ -81,6 +81,18 @@ func (uc *AuthUseCase) RegisterUser(ctx context.Context, user *entity.User, opts
 		return "", "", err
 	}
 
+	// If BusinessRepo available and no invite/business options provided, create a business for the user
+	var createdBusinessID int64
+	if uc.BusinessRepo != nil && opts != nil && opts.BusinessSlug == "" && opts.InviteToken == "" {
+		// create a business with slug derived from username
+		slug := strings.ToLower(strings.ReplaceAll(user.Username, " ", "-"))
+		biz := &entity.Business{Name: user.Username + "'s Workspace", Slug: slug, Email: user.Email, OwnerID: id, CreatedByID: id}
+		bid, berr := uc.BusinessRepo.CreateWithOwner(ctx, biz, id)
+		if berr == nil {
+			createdBusinessID = bid
+		}
+	}
+
 	refreshToken, err := uc.TokenService.GenerateRefreshToken(id)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to generate refresh token: %w", err)
@@ -89,6 +101,15 @@ func (uc *AuthUseCase) RegisterUser(ctx context.Context, user *entity.User, opts
 	err = uc.TokenService.StoreRefreshToken(ctx, id, refreshToken)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to store refresh token: %w", err)
+	}
+
+	// Generate access token including tenant_id when available
+	if createdBusinessID != 0 {
+		accessToken, err := uc.TokenService.GenerateAccessToken(id, createdBusinessID)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to generate access token: %w", err)
+		}
+		return accessToken, refreshToken, nil
 	}
 
 	accessToken, err := uc.TokenService.GenerateAccessToken(id)

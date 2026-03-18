@@ -135,6 +135,86 @@ type MockBusinessRepo struct {
 	mock.Mock
 }
 
+// MockMemberRepo is a mock for member repository
+type MockMemberRepo struct{ mock.Mock }
+
+func (m *MockMemberRepo) Create(ctx context.Context, member *entity.BusinessMember) error {
+	args := m.Called(ctx, member)
+	return args.Error(0)
+}
+func (m *MockMemberRepo) GetByID(ctx context.Context, id int64) (*entity.BusinessMember, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*entity.BusinessMember), args.Error(1)
+}
+func (m *MockMemberRepo) GetByUserAndBusiness(ctx context.Context, userID, businessID int64) (*entity.BusinessMember, error) {
+	args := m.Called(ctx, userID, businessID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*entity.BusinessMember), args.Error(1)
+}
+func (m *MockMemberRepo) ListByBusiness(ctx context.Context, businessID int64) ([]*entity.BusinessMember, error) {
+	args := m.Called(ctx, businessID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*entity.BusinessMember), args.Error(1)
+}
+func (m *MockMemberRepo) ListByUser(ctx context.Context, userID int64) ([]*entity.BusinessMember, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*entity.BusinessMember), args.Error(1)
+}
+func (m *MockMemberRepo) Update(ctx context.Context, member *entity.BusinessMember) error {
+	args := m.Called(ctx, member)
+	return args.Error(0)
+}
+func (m *MockMemberRepo) Delete(ctx context.Context, id int64) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+// MockAuditRepo is a mock for AuditRepository
+type MockAuditRepo struct{ mock.Mock }
+
+func (m *MockAuditRepo) Log(ctx context.Context, audit *entity.AuditLog) error {
+	args := m.Called(ctx, audit)
+	return args.Error(0)
+}
+func (m *MockAuditRepo) GetByID(ctx context.Context, id int64) (*entity.AuditLog, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*entity.AuditLog), args.Error(1)
+}
+func (m *MockAuditRepo) ListByBusiness(ctx context.Context, businessID int64, limit, offset int) ([]*entity.AuditLog, error) {
+	args := m.Called(ctx, businessID, limit, offset)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*entity.AuditLog), args.Error(1)
+}
+func (m *MockAuditRepo) ListByUser(ctx context.Context, businessID, userID int64, limit, offset int) ([]*entity.AuditLog, error) {
+	args := m.Called(ctx, businessID, userID, limit, offset)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*entity.AuditLog), args.Error(1)
+}
+func (m *MockAuditRepo) Export(ctx context.Context, businessID int64) ([]*entity.AuditLog, error) {
+	args := m.Called(ctx, businessID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*entity.AuditLog), args.Error(1)
+}
+
 func (m *MockBusinessRepo) Create(ctx context.Context, business *entity.Business) (int64, error) {
 	args := m.Called(ctx, business)
 	return args.Get(0).(int64), args.Error(1)

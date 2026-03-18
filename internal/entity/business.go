@@ -14,6 +14,7 @@ type Business struct {
 	Slug         string     `json:"slug" validate:"required,min=2,max=50"`
 	Email        string     `json:"email" validate:"required,email"`
 	OwnerID      int64      `json:"owner_id"`
+	PublicKey    string     `json:"public_key,omitempty"`
 	Plan         string     `json:"plan,omitempty"`
 	CreatedByID  int64      `json:"created_by_id,omitempty"`
 	DeletedAt    *time.Time `json:"deleted_at,omitempty"`
