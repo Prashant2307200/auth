@@ -9,15 +9,15 @@ import (
 )
 
 type Secrets struct {
-	AccessTokenSecret  string `yaml:"access_token_secret" env:"ACCESS_TOKEN_SECRET" env-required:"true" env-default:"kRbZnaqqtfk7xHklLwPEf/bt+OsvxEFgoNNiPkyoD8C9+4pHRbiPS6vdv1nGzPR+I3L6Sy9u3c/iPLD7fQqR7g=="`
+	AccessTokenSecret  string `yaml:"access_token_secret" env:"ACCESS_TOKEN_SECRET" env-required:"true"`
 	RefreshTokenSecret string `yaml:"refresh_token_secret" env:"REFRESH_TOKEN_SECRET" env-required:"true"`
 	CookieSecret       string `yaml:"cookie_secret" env:"COOKIE_SECRET" env-required:"true"`
 }
 
 type Cloud struct {
-	Name      string `yaml:"name" env:"NAME" env-required:"true" env-default:"dyrb0ytef"`
-	ApiKey    string `yaml:"api_key" env:"API_KEY" env-required:"true" env-default:"888923427284328"`
-	ApiSecret string `yaml:"api_secret" env:"API_SECRET" env-required:"true" env-default:"wDYpMIwf_og6dKfEgAfmqes1a9w"`
+	Name      string `yaml:"name" env:"NAME" env-required:"true"`
+	ApiKey    string `yaml:"api_key" env:"API_KEY" env-required:"true"`
+	ApiSecret string `yaml:"api_secret" env:"API_SECRET" env-required:"true"`
 }
 
 type HttpServer struct {
@@ -36,7 +36,7 @@ type Config struct {
 	HttpServer  HttpServer `yaml:"http_server"`
 	Cloud       Cloud      `yaml:"cloud"`
 	Redis       Redis      `yaml:"redis"`
-	PostgresUri string     `yaml:"postgres_uri" env:"POSTGRES_URI" env-required:"true" env-default:"postgresql://auth_db_521h_user:O1Si4boEobcNGqzp5R0AjAt5mDBXeTeX@dpg-d1sf2f8dl3ps73a7su1g-a.singapore-postgres.render.com/auth_db_521h"`
+	PostgresUri string     `yaml:"postgres_uri" env:"POSTGRES_URI" env-required:"true"`
 }
 
 func MustLoad() *Config {

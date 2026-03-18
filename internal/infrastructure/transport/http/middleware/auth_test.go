@@ -2,36 +2,20 @@ package middleware
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/Prashant2307200/auth-service/internal/service"
+	"github.com/Prashant2307200/auth-service/internal/testutil"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func generateTestRSAKeys(t *testing.T) (*rsa.PrivateKey, *rsa.PublicKey) {
-	// Generate a test RSA key pair
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	require.NoError(t, err)
-	return privateKey, &privateKey.PublicKey
-}
-
 func createTestTokenService(t *testing.T) *service.JWTTokenService {
-	privateKey, publicKey := generateTestRSAKeys(t)
-	// Use a mock Redis client - in real tests you'd use a test container or mock
-	// For now, we'll use nil and only test token verification which doesn't need Redis
-	return &service.JWTTokenService{
-		PublicAccessSecret: publicKey,
-		AccessSecret:       privateKey,
-		RefreshSecret:      "test-refresh-secret",
-		Rdb:                nil, // Not needed for token verification tests
-	}
+	return testutil.NewTestTokenService(t)
 }
 
 func TestGetUserIDFromContext(t *testing.T) {

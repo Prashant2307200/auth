@@ -7,19 +7,21 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/Prashant2307200/auth-service/internal/config"
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/repository"
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/handler"
+	"github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/logging"
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/middleware"
 	"github.com/Prashant2307200/auth-service/internal/seeder"
 	"github.com/Prashant2307200/auth-service/internal/service"
 	"github.com/Prashant2307200/auth-service/internal/usecase"
 	"github.com/Prashant2307200/auth-service/pkg/db"
+	"github.com/Prashant2307200/auth-service/pkg/ratelimit"
 	"github.com/Prashant2307200/auth-service/pkg/rdb"
-	"github.com/Prashant2307200/auth-service/pkg/uploader"
 )
 
 func main() {
@@ -60,21 +62,19 @@ func main() {
 		return
 	}
 
-	cloudinary, err := uploader.Connect(cfg.Cloud.Name, cfg.Cloud.ApiKey, cfg.Cloud.ApiSecret)
-	if err != nil {
-		log.Fatalf("Failed to initialize the cloudinary: %s", err.Error())
-		return
+	// Seed only in dev or when explicitly enabled via SEED_ON_STARTUP env var.
+	if cfg.Env == "dev" || os.Getenv("SEED_ON_STARTUP") == "true" {
+		err = seeder.SeedAll(context.Background(), userRepo, businessRepo)
+		if err != nil {
+			log.Fatalf("Failed to seed the database: %s", err.Error())
+			return
+		}
+		slog.Info("Seeded the database.")
+	} else {
+		slog.Info("Skipping DB seeding on startup.")
 	}
-	slog.Info("Connected to the cloudinary.")
 
-	err = seeder.SeedUsers(context.Background(), userRepo)
-	if err != nil {
-		log.Fatalf("Failed to seed the users: %s", err.Error())
-		return
-	}
-	slog.Info("Seeded the users.")
-
-	cloudService := service.NewCoudinaryUploadService(cloudinary.Cld)
+	cloudService := service.NewCloudinaryUploadService(cfg.Cloud.Name, cfg.Cloud.ApiKey, cfg.Cloud.ApiSecret)
 	tokenService, err := service.NewJWTTokenService(rdb.Rdb, "keys/public.pem", "keys/private.pem", cfg.Secrets.RefreshTokenSecret)
 	if err != nil {
 		log.Fatalf("Failed to initialize token service: %s", err.Error())
@@ -96,19 +96,47 @@ func main() {
 
 	authRouter := http.NewServeMux()
 	authHandler.RegisterRoutes(authRouter)
+	authRateLimiter := ratelimit.NewRateLimiter(0.083, 1)
+	authRouterWithRateLimit := wrapRateLimitedRoutes(authRouter, authRateLimiter, []string{"/register/", "/login/"})
+
+	cleanupTicker := time.NewTicker(5 * time.Minute)
+	defer cleanupTicker.Stop()
+	go func() {
+		for range cleanupTicker.C {
+			authRateLimiter.Cleanup(1 * time.Hour)
+		}
+	}()
 
 	router := http.NewServeMux()
-	router.Handle("/auth/", http.StripPrefix("/auth", authRouter))
+	router.Handle("/auth/", http.StripPrefix("/auth", authRouterWithRateLimit))
 	router.Handle("/users/", http.StripPrefix("/users", userRouter))
 	router.Handle("/business/", http.StripPrefix("/business", businessRouter))
 
 	v1 := http.NewServeMux()
+
+	// Health endpoint (public)
+	healthUseCase := usecase.NewHealthUseCase(userRepo, rdb.Rdb)
+	healthHandler := handler.NewHealthHandler(healthUseCase)
+	// Register at top-level so it's not wrapped by auth middleware under /api/v1
+	v1.Handle("/health", healthHandler)
+	v1.Handle("/health/", healthHandler)
+
+	if cfg.Env == "dev" {
+		devHandler := handler.NewDevHandler(userRepo, businessRepo)
+		v1.HandleFunc("POST /seed-db", devHandler.SeedDB)
+	}
+
 	authMiddleware := middleware.Authenticate(tokenService, cfg.Env)
 	v1.Handle("/api/v1/", authMiddleware(http.StripPrefix("/api/v1", router)))
 
+	handler := middleware.SecurityHeaders(logging.RequestIDMiddleware(v1))
 	server := &http.Server{
-		Addr:    cfg.HttpServer.Addr,
-		Handler: v1,
+		Addr:              cfg.HttpServer.Addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	slog.Info("Server starting...", slog.String("address", cfg.HttpServer.Addr))
@@ -135,4 +163,21 @@ func main() {
 	if err := server.Shutdown(ctx); err != nil {
 		slog.Error("Failed to shutdown the server", slog.String("error", err.Error()))
 	}
+}
+
+func wrapRateLimitedRoutes(handler http.Handler, limiter *ratelimit.RateLimiter, routes []string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, route := range routes {
+			// Use prefix matching so mounted paths (with prefixes) are correctly matched.
+			if strings.HasPrefix(r.URL.Path, route) {
+				if !limiter.Allow(r) {
+					w.Header().Set("Retry-After", "60")
+					http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+					return
+				}
+				break
+			}
+		}
+		handler.ServeHTTP(w, r)
+	})
 }

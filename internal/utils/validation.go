@@ -43,7 +43,7 @@ func ValidateUsername(username string) error {
 	if len(username) > MaxUsernameLength {
 		return fmt.Errorf("username must be at most %d characters", MaxUsernameLength)
 	}
-	
+
 	// Check for valid characters (alphanumeric and underscore)
 	for _, r := range username {
 		if !unicode.IsLetter(r) && !unicode.IsNumber(r) && r != '_' {
@@ -69,22 +69,22 @@ func SanitizeString(input string, maxLength int) string {
 	if maxLength <= 0 {
 		maxLength = 1000
 	}
-	
+
 	// Remove control characters and trim
 	cleaned := strings.TrimSpace(input)
 	var result strings.Builder
 	result.Grow(len(cleaned))
-	
+
 	for _, r := range cleaned {
 		if r >= 32 && r != 127 { // Printable ASCII except DEL
 			result.WriteRune(r)
 		}
 	}
-	
+
 	output := result.String()
 	if len(output) > maxLength {
 		output = output[:maxLength]
 	}
-	
+
 	return output
 }

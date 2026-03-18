@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"github.com/Prashant2307200/auth-service/internal/entity"
 	"github.com/Prashant2307200/auth-service/internal/usecase/interfaces"
 	"github.com/Prashant2307200/auth-service/pkg/hash"
+	v "github.com/Prashant2307200/auth-service/pkg/validator"
 )
 
 // RegisterOptions carries optional onboarding params for registration.
@@ -38,6 +40,20 @@ func NewAuthUseCase(r interfaces.UserRepo, br interfaces.BusinessRepo, s interfa
 }
 
 func (uc *AuthUseCase) RegisterUser(ctx context.Context, user *entity.User, opts *RegisterOptions) (string, string, error) {
+	// validate inputs
+	var ves v.ValidationErrors
+	if ok, err := v.ValidateEmail(user.Email); !ok {
+		ves = append(ves, v.ValidationError{Field: "email", Message: err.Error()})
+	}
+	if ok, err := v.ValidatePassword(user.Password); !ok {
+		ves = append(ves, v.ValidationError{Field: "password", Message: err.Error()})
+	}
+	if ok, err := v.ValidateUsername(user.Username); !ok {
+		ves = append(ves, v.ValidationError{Field: "username", Message: err.Error()})
+	}
+	if len(ves) > 0 {
+		return "", "", fmt.Errorf("validation failed: %w", ves)
+	}
 	existingUser, err := uc.UserRepo.GetByEmail(ctx, user.Email)
 	if err != nil && err != sql.ErrNoRows {
 		slog.Error("Failed to check existing user", slog.String("email", user.Email), slog.Any("error", err))
@@ -58,7 +74,10 @@ func (uc *AuthUseCase) RegisterUser(ctx context.Context, user *entity.User, opts
 	}
 
 	if err := uc.applyOnboarding(ctx, id, user, opts); err != nil {
-		slog.Error("Onboarding failed after user creation", slog.Int64("user_id", id), slog.Any("error", err))
+		slog.Error("Onboarding failed after user creation, rolling back", slog.Int64("user_id", id), slog.Any("error", err))
+		if delErr := uc.UserRepo.DeleteById(ctx, id); delErr != nil {
+			slog.Error("Failed to rollback user creation", slog.Int64("user_id", id), slog.Any("error", delErr))
+		}
 		return "", "", err
 	}
 
@@ -127,6 +146,18 @@ func (uc *AuthUseCase) applyOnboarding(ctx context.Context, userID int64, user *
 
 func (uc *AuthUseCase) LoginUser(ctx context.Context, email string, password string) (string, string, error) {
 
+	// validate inputs: ensure email is valid and password is present
+	var ves v.ValidationErrors
+	if ok, err := v.ValidateEmail(email); !ok {
+		ves = append(ves, v.ValidationError{Field: "email", Message: err.Error()})
+	}
+	if password == "" {
+		ves = append(ves, v.ValidationError{Field: "password", Message: "password is required"})
+	}
+	if len(ves) > 0 {
+		return "", "", fmt.Errorf("validation failed: %w", ves)
+	}
+
 	existingUser, err := uc.UserRepo.GetByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -138,6 +169,20 @@ func (uc *AuthUseCase) LoginUser(ctx context.Context, email string, password str
 	err = hash.CheckPassword(existingUser.Password, password)
 	if err != nil {
 		return "", "", fmt.Errorf("invalid password: %w", err)
+	}
+
+	// After successful verification, check if stored hash needs upgrade
+	if needs, nerr := hash.NeedsRehash(existingUser.Password); nerr == nil && needs {
+		// best-effort: rehash with current cost and update DB, do not fail login on errors
+		if newHash, herr := hash.HashPassword(password); herr == nil {
+			if upErr := uc.UserRepo.UpdatePassword(ctx, existingUser.ID, newHash); upErr == nil {
+				slog.Info("password rehashed for user", slog.Int64("user_id", existingUser.ID))
+			} else {
+				slog.Warn("failed to update rehashed password", slog.Int64("user_id", existingUser.ID), slog.Any("error", upErr))
+			}
+		} else {
+			slog.Warn("failed to rehash password", slog.Int64("user_id", existingUser.ID), slog.Any("error", herr))
+		}
 	}
 
 	refreshToken, err := uc.TokenService.GenerateRefreshToken(existingUser.ID)
@@ -208,7 +253,7 @@ func (uc *AuthUseCase) RefreshSession(ctx context.Context, refreshToken string) 
 		return "", "", fmt.Errorf("refresh token not found in storage: %w", err)
 	}
 
-	if storedToken != refreshToken {
+	if subtle.ConstantTimeCompare([]byte(storedToken), []byte(refreshToken)) != 1 {
 		slog.Error("Refresh token mismatch", slog.Int64("user_id", parsedUserID))
 		return "", "", errors.New("refresh token does not match stored token")
 	}
@@ -242,4 +287,8 @@ func (uc *AuthUseCase) GetPublicKey() ([]byte, error) {
 	}
 
 	return pubKey, nil
+}
+
+func (uc *AuthUseCase) GenerateUploadSignature(ctx context.Context, userID int64) (*interfaces.UploadSignature, error) {
+	return uc.CloudService.GenerateUploadSignature(ctx, userID)
 }

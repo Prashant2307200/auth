@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/Prashant2307200/auth-service/internal/service"
@@ -18,12 +17,28 @@ func Authenticate(tokenService *service.JWTTokenService, env string) func(http.H
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-			ctxWithTimeout, cancel := context.WithTimeout(r.Context(), time.Second)
+			ctxWithTimeout, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 			defer cancel()
 
 			path := r.URL.Path
 
-			if strings.HasPrefix(path, "/api/v1/auth/") && (strings.Contains(path, "login") || strings.Contains(path, "register") || strings.Contains(path, "refresh") || strings.Contains(path, "public-key")) {
+			publicPaths := []string{
+				"/api/v1/auth/login",
+				"/api/v1/auth/register",
+				"/api/v1/auth/refresh",
+				"/api/v1/auth/public-key",
+				"/health",
+			}
+
+			isPublic := false
+			for _, publicPath := range publicPaths {
+				if path == publicPath || path == publicPath+"/" {
+					isPublic = true
+					break
+				}
+			}
+
+			if isPublic {
 				next.ServeHTTP(w, r.WithContext(ctxWithTimeout))
 				return
 			}
@@ -52,4 +67,10 @@ func GetUserIDFromContext(ctx context.Context) (int64, error) {
 		return 0, errors.New("user ID not found in request context - authentication middleware may not have run")
 	}
 	return user, nil
+}
+
+// WithUserID returns a new context with the provided user ID set.
+// Useful for tests to inject an authenticated user into request contexts.
+func WithUserID(ctx context.Context, id int64) context.Context {
+	return context.WithValue(ctx, userContextKey, id)
 }

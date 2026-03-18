@@ -17,6 +17,7 @@ type JWTTokenService struct {
 	AccessSecret       *rsa.PrivateKey
 	RefreshSecret      string
 	Rdb                *redis.Client
+	publicKeyPEM       []byte
 }
 
 func NewJWTTokenService(rdb *redis.Client, publicAccessSecretPath, accessSecretPath, refreshSecret string) (*JWTTokenService, error) {
@@ -45,6 +46,7 @@ func NewJWTTokenService(rdb *redis.Client, publicAccessSecretPath, accessSecretP
 		AccessSecret:       accessSecret,
 		RefreshSecret:      refreshSecret,
 		Rdb:                rdb,
+		publicKeyPEM:       publicAccessSecretBytes,
 	}, nil
 }
 
@@ -73,14 +75,22 @@ func generateJWT(userID string, secret string, ttl time.Duration) (string, error
 }
 
 func (s *JWTTokenService) VerifyRefreshToken(ctx context.Context, tokenStr string) (string, error) {
-
 	claims := jwt.MapClaims{}
 
-	_, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
 		return []byte(s.RefreshSecret), nil
 	})
-	if err != nil && !errors.Is(err, jwt.ErrTokenExpired) {
+	if err != nil {
+		if errors.Is(err, jwt.ErrTokenExpired) {
+			return "", jwt.ErrTokenExpired
+		}
 		return "", fmt.Errorf("token invalid: %w", err)
+	}
+	if !token.Valid {
+		return "", errors.New("token is not valid")
 	}
 
 	userID, ok := claims["userId"].(string)
@@ -132,9 +142,5 @@ func (s *JWTTokenService) VerifyToken(ctx context.Context, tokenStr string) (int
 }
 
 func (s *JWTTokenService) GetPublicKeyPEM() ([]byte, error) {
-	data, err := os.ReadFile("keys/public.pem")
-	if err != nil {
-		return nil, fmt.Errorf("failed to read public key file: %w", err)
-	}
-	return data, nil
+	return s.publicKeyPEM, nil
 }

@@ -2,31 +2,52 @@ package service
 
 import (
 	"context"
-	"mime/multipart"
+	"fmt"
+	"net/url"
+	"strconv"
+	"time"
 
-	"github.com/cloudinary/cloudinary-go/v2"
-	"github.com/cloudinary/cloudinary-go/v2/api/uploader"
+	"github.com/Prashant2307200/auth-service/internal/usecase/interfaces"
+	"github.com/cloudinary/cloudinary-go/v2/api"
 )
 
-type CoudinaryUploadService struct {
-	Cld *cloudinary.Cloudinary
+type CloudinaryUploadService struct {
+	CloudName string
+	APIKey    string
+	APISecret string
 }
 
-func NewCoudinaryUploadService(cld *cloudinary.Cloudinary) *CoudinaryUploadService {
-	return &CoudinaryUploadService{
-		Cld: cld,
+func NewCloudinaryUploadService(cloudName, apiKey, apiSecret string) *CloudinaryUploadService {
+	return &CloudinaryUploadService{
+		CloudName: cloudName,
+		APIKey:    apiKey,
+		APISecret: apiSecret,
 	}
 }
 
-func (u *CoudinaryUploadService) UploadImage(ctx context.Context, file multipart.File, fileHeader *multipart.FileHeader) (string, error) {
+func (u *CloudinaryUploadService) GenerateUploadSignature(ctx context.Context, userID int64) (*interfaces.UploadSignature, error) {
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+	publicID := fmt.Sprintf("profile_%d_%s", userID, timestamp)
 
-	res, err := u.Cld.Upload.Upload(ctx, file, uploader.UploadParams{
-		Folder: "profile_pics", // Optional: Cloudinary folder
-		PublicID: fileHeader.Filename,
-	})
+	params := url.Values{}
+	params.Set("folder", "profile_pics")
+	params.Set("public_id", publicID)
+	params.Set("timestamp", timestamp)
+
+	signature, err := api.SignParameters(params, u.APISecret)
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("failed to sign upload params: %w", err)
 	}
 
-	return res.SecureURL, nil
+	uploadURL := fmt.Sprintf("https://api.cloudinary.com/v1_1/%s/image/upload", u.CloudName)
+
+	return &interfaces.UploadSignature{
+		UploadURL: uploadURL,
+		APIKey:    u.APIKey,
+		Signature: signature,
+		Timestamp: timestamp,
+		Folder:    "profile_pics",
+		PublicID:  publicID,
+		CloudName: u.CloudName,
+	}, nil
 }

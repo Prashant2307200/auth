@@ -2,7 +2,6 @@ package interfaces
 
 import (
 	"context"
-	"mime/multipart"
 
 	"github.com/Prashant2307200/auth-service/internal/entity"
 )
@@ -12,6 +11,8 @@ type UserRepo interface {
 	GetById(ctx context.Context, id int64) (*entity.User, error)
 	GetByEmail(ctx context.Context, email string) (*entity.User, error)
 	UpdateById(ctx context.Context, id int64, user *entity.User) error
+	// UpdatePassword updates only the stored password hash for a user
+	UpdatePassword(ctx context.Context, id int64, hashedPassword string) error
 	DeleteById(ctx context.Context, id int64) error
 	Create(ctx context.Context, user *entity.User) (int64, error)
 	Search(ctx context.Context, currentID int64, search string) ([]*entity.User, error)
@@ -19,6 +20,7 @@ type UserRepo interface {
 
 type BusinessRepo interface {
 	Create(ctx context.Context, business *entity.Business) (int64, error)
+	CreateWithOwner(ctx context.Context, business *entity.Business, ownerID int64) (int64, error)
 	GetById(ctx context.Context, id int64) (*entity.Business, error)
 	GetBySlug(ctx context.Context, slug string) (*entity.Business, error)
 	GetByOwnerId(ctx context.Context, ownerId int64) ([]*entity.Business, error)
@@ -53,10 +55,21 @@ type TokenService interface {
 	StoreRefreshToken(ctx context.Context, userID int64, token string) error
 	RemoveRefreshToken(ctx context.Context, userID int64) error
 	VerifyRefreshToken(ctx context.Context, tokenStr string) (string, error)
+	VerifyToken(ctx context.Context, tokenStr string) (int64, error)
 	GetRefreshToken(ctx context.Context, userID int64) (string, error)
 	GetPublicKeyPEM() ([]byte, error)
 }
 
 type CloudService interface {
-	UploadImage(ctx context.Context, file multipart.File, fileHeader *multipart.FileHeader) (string, error)
+	GenerateUploadSignature(ctx context.Context, userID int64) (*UploadSignature, error)
+}
+
+type UploadSignature struct {
+	UploadURL string `json:"upload_url"`
+	APIKey    string `json:"api_key"`
+	Signature string `json:"signature"`
+	Timestamp string `json:"timestamp"`
+	Folder    string `json:"folder"`
+	PublicID  string `json:"public_id"`
+	CloudName string `json:"cloud_name"`
 }

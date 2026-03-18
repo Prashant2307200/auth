@@ -43,6 +43,38 @@ func (r *BusinessRepo) Create(ctx context.Context, business *entity.Business) (i
 	return id, nil
 }
 
+func (r *BusinessRepo) CreateWithOwner(ctx context.Context, business *entity.Business, ownerID int64) (int64, error) {
+	tx, err := r.Db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	signupPolicy := business.SignupPolicy
+	if signupPolicy == "" {
+		signupPolicy = entity.SignupPolicyClosed
+	}
+	createQuery := `
+		INSERT INTO businesses (name, slug, email, owner_id, signup_policy, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		RETURNING id
+	`
+	var id int64
+	if err := tx.QueryRowContext(ctx, createQuery, business.Name, business.Slug, business.Email, ownerID, signupPolicy).Scan(&id); err != nil {
+		return 0, fmt.Errorf("failed to create business: %w", err)
+	}
+
+	addUserQuery := `INSERT INTO business_users (business_id, user_id, role, created_at) VALUES ($1, $2, $3, CURRENT_TIMESTAMP)`
+	if _, err := tx.ExecContext(ctx, addUserQuery, id, ownerID, 2); err != nil {
+		return 0, fmt.Errorf("failed to add owner to business: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+	return id, nil
+}
+
 func (r *BusinessRepo) GetById(ctx context.Context, id int64) (*entity.Business, error) {
 	query := `
 		SELECT id, name, slug, email, owner_id, COALESCE(signup_policy, 'closed'), created_at, updated_at

@@ -2,9 +2,9 @@ package testutil
 
 import (
 	"context"
-	"mime/multipart"
 
 	"github.com/Prashant2307200/auth-service/internal/entity"
+	"github.com/Prashant2307200/auth-service/internal/usecase/interfaces"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -39,6 +39,11 @@ func (m *MockUserRepo) GetByEmail(ctx context.Context, email string) (*entity.Us
 
 func (m *MockUserRepo) UpdateById(ctx context.Context, id int64, user *entity.User) error {
 	args := m.Called(ctx, id, user)
+	return args.Error(0)
+}
+
+func (m *MockUserRepo) UpdatePassword(ctx context.Context, id int64, hashedPassword string) error {
+	args := m.Called(ctx, id, hashedPassword)
 	return args.Error(0)
 }
 
@@ -94,6 +99,11 @@ func (m *MockTokenService) VerifyRefreshToken(ctx context.Context, tokenStr stri
 	return args.String(0), args.Error(1)
 }
 
+func (m *MockTokenService) VerifyToken(ctx context.Context, tokenStr string) (int64, error) {
+	args := m.Called(ctx, tokenStr)
+	return args.Get(0).(int64), args.Error(1)
+}
+
 func (m *MockTokenService) GetRefreshToken(ctx context.Context, userID int64) (string, error) {
 	args := m.Called(ctx, userID)
 	return args.String(0), args.Error(1)
@@ -112,9 +122,12 @@ type MockCloudService struct {
 	mock.Mock
 }
 
-func (m *MockCloudService) UploadImage(ctx context.Context, file multipart.File, fileHeader *multipart.FileHeader) (string, error) {
-	args := m.Called(ctx, file, fileHeader)
-	return args.String(0), args.Error(1)
+func (m *MockCloudService) GenerateUploadSignature(ctx context.Context, userID int64) (*interfaces.UploadSignature, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*interfaces.UploadSignature), args.Error(1)
 }
 
 // MockBusinessRepo is a mock implementation of BusinessRepo interface
@@ -124,6 +137,11 @@ type MockBusinessRepo struct {
 
 func (m *MockBusinessRepo) Create(ctx context.Context, business *entity.Business) (int64, error) {
 	args := m.Called(ctx, business)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+func (m *MockBusinessRepo) CreateWithOwner(ctx context.Context, business *entity.Business, ownerID int64) (int64, error) {
+	args := m.Called(ctx, business, ownerID)
 	return args.Get(0).(int64), args.Error(1)
 }
 

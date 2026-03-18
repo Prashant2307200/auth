@@ -79,7 +79,7 @@ func (h *BusinessHandler) create(w http.ResponseWriter, r *http.Request) {
 
 	createdBusiness, err := h.UC.CreateBusiness(r.Context(), userID, business)
 	if err != nil {
-		response.WriteJson(w, http.StatusInternalServerError, response.GeneralError(err))
+		response.WriteJson(w, response.ErrorToStatus(err), response.GeneralError(err))
 		return
 	}
 
@@ -238,7 +238,7 @@ func (h *BusinessHandler) getMyBusinesses(w http.ResponseWriter, r *http.Request
 	businesses, err := h.UC.GetUserBusinesses(r.Context(), userID)
 	if err != nil {
 		slog.Error("failed to get my businesses", slog.Any("error", err))
-		response.WriteJson(w, http.StatusInternalServerError, response.GeneralError(err))
+		response.WriteJson(w, response.ErrorToStatus(err), response.GeneralError(err))
 		return
 	}
 	response.WriteJson(w, http.StatusOK, businesses)

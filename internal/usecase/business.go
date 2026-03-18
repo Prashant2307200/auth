@@ -40,12 +40,8 @@ func (uc *BusinessUseCase) CreateBusiness(ctx context.Context, creatorID int64, 
 		return nil, fmt.Errorf("business with slug %s already exists", business.Slug)
 	}
 
-	business.OwnerID = creatorID
-	id, err := uc.BusinessRepo.Create(ctx, business)
+	id, err := uc.BusinessRepo.CreateWithOwner(ctx, business, creatorID)
 	if err != nil {
-		return nil, err
-	}
-	if err := uc.BusinessRepo.AddUser(ctx, id, creatorID, BusinessRoleOwner); err != nil {
 		return nil, err
 	}
 	return uc.BusinessRepo.GetById(ctx, id)
@@ -204,7 +200,7 @@ func (uc *BusinessUseCase) AddDomain(ctx context.Context, requesterID int64, bus
 		Domain:            domain,
 		Verified:          false,
 		AutoJoinEnabled:   false,
-		VerificationToken:  token,
+		VerificationToken: token,
 	}
 	id, err := uc.BusinessRepo.CreateDomain(ctx, d)
 	if err != nil {

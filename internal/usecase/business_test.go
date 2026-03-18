@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/Prashant2307200/auth-service/internal/entity"
 	"github.com/Prashant2307200/auth-service/internal/testutil"
@@ -17,23 +18,16 @@ func TestBusinessUseCase_CreateBusiness(t *testing.T) {
 	userRepo := new(testutil.MockUserRepo)
 	uc := NewBusinessUseCase(businessRepo, userRepo)
 
-	input := &entity.Business{
-		Name:  "Acme",
-		Slug:  "acme",
-		Email: "owner@acme.com",
-	}
+	input := testutil.CreateTestBusiness()
+	input.Name, input.Slug = "Acme", "acme"
+	input.ID = 0
 
-	expected := &entity.Business{
-		ID:      11,
-		Name:    "Acme",
-		Slug:    "acme",
-		Email:   "owner@acme.com",
-		OwnerID: 10,
-	}
+	expected := testutil.CreateTestBusinessWithID(11)
+	expected.Name, expected.Slug = "Acme", "acme"
+	expected.OwnerID = 10
 
 	businessRepo.On("GetBySlug", mock.Anything, "acme").Return(nil, errors.New("not found"))
-	businessRepo.On("Create", mock.Anything, mock.AnythingOfType("*entity.Business")).Return(int64(11), nil)
-	businessRepo.On("AddUser", mock.Anything, int64(11), int64(10), BusinessRoleOwner).Return(nil)
+	businessRepo.On("CreateWithOwner", mock.Anything, mock.AnythingOfType("*entity.Business"), int64(10)).Return(int64(11), nil)
 	businessRepo.On("GetById", mock.Anything, int64(11)).Return(expected, nil)
 
 	result, err := uc.CreateBusiness(context.Background(), 10, input)
@@ -49,7 +43,8 @@ func TestBusinessUseCase_UpdateBusiness(t *testing.T) {
 	userRepo := new(testutil.MockUserRepo)
 	uc := NewBusinessUseCase(businessRepo, userRepo)
 
-	update := &entity.Business{Name: "Updated", Slug: "updated", Email: "updated@acme.com"}
+	update := testutil.CreateTestBusinessWithSignupPolicy("updated", "closed")
+	update.Name, update.Email = "Updated", "updated@acme.com"
 	businessRepo.On("GetUserRole", mock.Anything, int64(2), int64(1)).Return(BusinessRoleAdmin, nil)
 	businessRepo.On("Update", mock.Anything, int64(2), update).Return(nil)
 
@@ -121,7 +116,7 @@ func TestBusinessUseCase_ListInvites(t *testing.T) {
 	userRepo := new(testutil.MockUserRepo)
 	uc := NewBusinessUseCase(businessRepo, userRepo)
 
-	invites := []*entity.BusinessInvite{{ID: 1, BusinessID: 5, Email: "a@x.com", Status: entity.InviteStatusPending}}
+	invites := []*entity.BusinessInvite{testutil.CreateTestInvite(5, "a@x.com", "tok", entity.InviteStatusPending, time.Now())}
 	businessRepo.On("GetUserRole", mock.Anything, int64(5), int64(1)).Return(BusinessRoleAdmin, nil)
 	businessRepo.On("ListInvites", mock.Anything, int64(5)).Return(invites, nil)
 
@@ -165,7 +160,8 @@ func TestBusinessUseCase_VerifyDomain(t *testing.T) {
 	userRepo := new(testutil.MockUserRepo)
 	uc := NewBusinessUseCase(businessRepo, userRepo)
 
-	domain := &entity.BusinessDomain{ID: 4, BusinessID: 5, Domain: "acme.com", Verified: false}
+	domain := testutil.CreateTestDomain(5, "acme.com", false, false)
+	domain.ID = 4
 	businessRepo.On("GetUserRole", mock.Anything, int64(5), int64(1)).Return(BusinessRoleAdmin, nil)
 	businessRepo.On("GetDomainByVerificationToken", mock.Anything, "verify-tok").Return(domain, nil)
 	businessRepo.On("VerifyDomain", mock.Anything, int64(4)).Return(nil)
