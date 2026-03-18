@@ -4,12 +4,15 @@ import (
 	"context"
 	"log"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
+
+	"google.golang.org/grpc"
 
 	"github.com/Prashant2307200/auth-service/internal/config"
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/repository"
@@ -18,6 +21,7 @@ import (
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/middleware"
 	"github.com/Prashant2307200/auth-service/internal/seeder"
 	"github.com/Prashant2307200/auth-service/internal/service"
+	grpcserver "github.com/Prashant2307200/auth-service/internal/transport/grpc/server"
 	"github.com/Prashant2307200/auth-service/internal/usecase"
 	"github.com/Prashant2307200/auth-service/pkg/db"
 	"github.com/Prashant2307200/auth-service/pkg/ratelimit"
@@ -155,6 +159,22 @@ func main() {
 		}
 	}()
 
+	grpcListener, err := net.Listen("tcp", ":9090")
+	if err != nil {
+		log.Fatalf("Failed to listen on gRPC port: %s", err.Error())
+	}
+
+	grpcServer := grpc.NewServer()
+	_ = grpcserver.NewTokenService(tokenService, userRepo)
+	_ = grpcserver.NewPublicKeyService(businessRepo)
+
+	go func() {
+		slog.Info("gRPC server starting...", slog.String("address", ":9090"))
+		if err := grpcServer.Serve(grpcListener); err != nil {
+			slog.Error("gRPC server failed", slog.Any("error", err))
+		}
+	}()
+
 	<-done
 	slog.Info("Shutting down...")
 
@@ -162,6 +182,11 @@ func main() {
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
 		slog.Error("Failed to shutdown the server", slog.String("error", err.Error()))
+	}
+
+	grpcServer.GracefulStop()
+	if err := grpcListener.Close(); err != nil {
+		slog.Error("Failed to close gRPC listener", slog.Any("error", err))
 	}
 }
 
