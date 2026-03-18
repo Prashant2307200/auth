@@ -377,3 +377,13 @@ func (m *MockBusinessRepo) UpdateDomainAutoJoin(ctx context.Context, domainID in
 	args := m.Called(ctx, domainID, businessID, enabled)
 	return args.Error(0)
 }
+
+
+type MockEmailService struct {
+	mock.Mock
+}
+
+func (m *MockEmailService) SendInvite(ctx context.Context, to string, token string) error {
+	args := m.Called(ctx, to, token)
+	return args.Error(0)
+}
