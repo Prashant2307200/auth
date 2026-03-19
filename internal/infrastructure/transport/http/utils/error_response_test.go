@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -41,7 +42,7 @@ func TestSendErrorResponseWithDetails(t *testing.T) {
 	if er.Details == "" {
 		t.Fatalf("expected details to be present")
 	}
-	if !contains(er.Details, "field") {
+	if !strings.Contains(er.Details, "field") {
 		t.Fatalf("unexpected details value: %s", er.Details)
 	}
 }
@@ -63,22 +64,7 @@ func TestDetailsOmittedWhenEmpty(t *testing.T) {
 	SendErrorResponse(rr, http.StatusBadRequest, BAD_REQUEST, "no details")
 
 	body := rr.Body.String()
-	if contains(body, "details") {
+	if strings.Contains(body, "\"details\"") {
 		t.Fatalf("expected details to be omitted but found in body: %s", body)
 	}
-}
-
-// helper: simple substring check
-func contains(s, sub string) bool {
-	return len(s) >= len(sub) && (s == sub || (len(s) > len(sub) && (stringIndex(s, sub) >= 0)))
-}
-
-// stringIndex returns index of substr or -1 (kept simple to avoid imports)
-func stringIndex(s, substr string) int {
-	for i := 0; i+len(substr) <= len(s); i++ {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
 }
