@@ -1,0 +1,100 @@
+openapi: 3.1.0
+info:
+  title: Chatty Auth Service API
+  version: 1.0.0
+  description: OpenAPI 3.1 spec for auth-service (register, teams, health)
+servers:
+  - url: http://localhost:8080
+paths:
+  /auth/register:
+    post:
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '201':
+          description: Created
+  /api/v1/team/invite:
+    post:
+      summary: Invite a user to a team
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                role:
+                  type: integer
+      responses:
+        '201':
+          description: Invite sent
+  /api/v1/team/members:
+    get:
+      summary: List members of a team
+      responses:
+        '200':
+          description: OK
+  /api/v1/team/members/{id}/role:
+    patch:
+      summary: Update member role
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role:
+                  type: integer
+      responses:
+        '200':
+          description: Updated
+  /api/v1/team/members/{id}:
+    delete:
+      summary: Remove a member
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Removed
+  /health:
+    get:
+      summary: Basic health endpoint (legacy)
+      responses:
+        '200':
+          description: OK
+  /health/live:
+    get:
+      summary: Liveness probe
+      responses:
+        '200':
+          description: Live
+  /health/ready:
+    get:
+      summary: Readiness probe
+      responses:
+        '200':
+          description: Ready
+components: {}
