@@ -25,9 +25,9 @@ type HttpServer struct {
 }
 
 type Redis struct {
-	Addr string `yaml:"address" env:"REDIS_ADDRESS" env-required:"true" env-default:"localhost:6379"`
-	User string `yaml:"username" env:"REDIS_USERNAME" env-required:"true" env-default:""`
-	Pass string `yaml:"password" env:"REDIS_PASSWORD" env-required:"true" env-default:""`
+	Addr string `yaml:"address" env:"REDIS_ADDRESS" env-required:"true"`
+	User string `yaml:"username" env:"REDIS_USERNAME" env-required:"true"`
+	Pass string `yaml:"password" env:"REDIS_PASSWORD" env-required:"true"`
 }
 
 type Config struct {
