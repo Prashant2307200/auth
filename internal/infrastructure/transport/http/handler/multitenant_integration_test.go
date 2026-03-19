@@ -19,7 +19,7 @@ func TestMultiTenantIsolation(t *testing.T) {
 	mockAuditRepo := &testutil.MockAuditRepo{}
 	mockEmailSvc := &testutil.MockEmailService{}
 
-	teamUseCase := usecase.NewTeamUsecase(mockMemberRepo, mockAuditRepo, mockEmailSvc)
+	teamUseCase := usecase.NewTeamUsecase(mockMemberRepo, mockAuditRepo, mockEmailSvc, nil)
 
 	t.Run("ListMembers returns only members from specified business", func(t *testing.T) {
 		businessID := int64(100)
@@ -71,7 +71,7 @@ func TestRBACEnforcement(t *testing.T) {
 	mockAuditRepo := &testutil.MockAuditRepo{}
 	mockEmailSvc := &testutil.MockEmailService{}
 
-	teamUseCase := usecase.NewTeamUsecase(mockMemberRepo, mockAuditRepo, mockEmailSvc)
+	teamUseCase := usecase.NewTeamUsecase(mockMemberRepo, mockAuditRepo, mockEmailSvc, nil)
 
 	t.Run("UpdateMemberRole changes role for team member", func(t *testing.T) {
 		businessID := int64(300)
@@ -108,12 +108,18 @@ func TestRBACEnforcement(t *testing.T) {
 		mockMemberRepo.On("Create", ctx, mock.MatchedBy(func(m *entity.BusinessMember) bool {
 			return m.BusinessID == businessID && m.Email == email && m.Status == entity.MemberStatusPending
 		})).Return(nil)
+		// Expect Update to be called to store the invite token (legacy or generated)
+		mockMemberRepo.On("Update", ctx, mock.MatchedBy(func(m *entity.BusinessMember) bool {
+			// InviteToken should be set and status should still be pending until acceptance
+			return m.BusinessID == businessID && m.Email == email && m.Status == entity.MemberStatusPending && m.InviteToken != ""
+		})).Return(nil)
 		mockAuditRepo.On("Log", ctx, mock.AnythingOfType("*entity.AuditLog")).Return(nil)
 		mockEmailSvc.On("SendInvite", ctx, email, mock.AnythingOfType("string")).Return(nil)
 
-		err := teamUseCase.InviteUser(ctx, businessID, email, roleID)
+		token, err := teamUseCase.InviteUser(ctx, businessID, email, roleID)
 
 		assert.NoError(t, err)
+		assert.NotEmpty(t, token)
 		mockMemberRepo.AssertCalled(t, "Create", ctx, mock.AnythingOfType("*entity.BusinessMember"))
 	})
 }
@@ -125,7 +131,7 @@ func TestAuditLogging(t *testing.T) {
 	mockAuditRepo := &testutil.MockAuditRepo{}
 	mockEmailSvc := &testutil.MockEmailService{}
 
-	teamUseCase := usecase.NewTeamUsecase(mockMemberRepo, mockAuditRepo, mockEmailSvc)
+	teamUseCase := usecase.NewTeamUsecase(mockMemberRepo, mockAuditRepo, mockEmailSvc, nil)
 
 	t.Run("All member operations logged to audit trail", func(t *testing.T) {
 		businessID := int64(500)
@@ -166,7 +172,7 @@ func TestTenantScopedDataAccess(t *testing.T) {
 	mockAuditRepo := &testutil.MockAuditRepo{}
 	mockEmailSvc := &testutil.MockEmailService{}
 
-	teamUseCase := usecase.NewTeamUsecase(mockMemberRepo, mockAuditRepo, mockEmailSvc)
+	teamUseCase := usecase.NewTeamUsecase(mockMemberRepo, mockAuditRepo, mockEmailSvc, nil)
 
 	t.Run("Tenant A cannot access Tenant B members", func(t *testing.T) {
 		tenantAID := int64(1000)

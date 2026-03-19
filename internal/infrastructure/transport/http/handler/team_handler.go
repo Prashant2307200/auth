@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/middleware"
 	"github.com/Prashant2307200/auth-service/internal/usecase"
@@ -38,18 +39,34 @@ func (h *TeamHandler) invite(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
+	// Validate email
+	if req.Email == "" {
+		http.Error(w, "email is required", http.StatusBadRequest)
+		return
+	}
+	if !isValidEmail(req.Email) {
+		http.Error(w, "invalid email format", http.StatusBadRequest)
+		return
+	}
+	// Validate role (1-4)
+	if req.Role < 1 || req.Role > 4 {
+		http.Error(w, "role must be between 1 and 4", http.StatusBadRequest)
+		return
+	}
 	businessID := middleware.GetTenantID(r)
 	if businessID == 0 {
 		http.Error(w, "tenant not found", http.StatusUnauthorized)
 		return
 	}
-	if err := h.UC.InviteUser(r.Context(), businessID, req.Email, req.Role); err != nil {
+	token, err := h.UC.InviteUser(r.Context(), businessID, req.Email, req.Role)
+	if err != nil {
 		slog.Error("failed to invite user", slog.Any("error", err))
 		http.Error(w, "failed to invite user", http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"message":"invited"}`))
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"invite_token": token, "message": "invitation sent"})
 }
 
 func (h *TeamHandler) listMembers(w http.ResponseWriter, r *http.Request) {
@@ -88,6 +105,10 @@ func (h *TeamHandler) updateMemberRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
+	if body.Role < 1 || body.Role > 4 {
+		http.Error(w, "role must be between 1 and 4", http.StatusBadRequest)
+		return
+	}
 	businessID := middleware.GetTenantID(r)
 	if err := h.UC.UpdateMemberRole(r.Context(), businessID, id, body.Role); err != nil {
 		slog.Error("failed to update role", slog.Any("error", err))
@@ -119,6 +140,11 @@ func (h *TeamHandler) removeMember(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"message":"removed"}`))
+}
+
+func isValidEmail(email string) bool {
+	// simple validation
+	return strings.Contains(email, "@") && strings.Contains(email, ".")
 }
 
 func splitPath(p string) []string {

@@ -63,6 +63,17 @@ func (t *teamUsecase) InviteUser(ctx context.Context, businessID int64, email st
 		if err := t.memberRepo.Update(ctx, bm); err != nil {
 			return "", fmt.Errorf("failed to store invite token: %w", err)
 		}
+	} else {
+		// fallback legacy token for environments without token generator
+		token = fmt.Sprintf("member_%d", bm.ID)
+		bm.InviteToken = token
+		if err := t.memberRepo.Update(ctx, bm); err != nil {
+			return "", fmt.Errorf("failed to store invite token: %w", err)
+		}
+	}
+	// send invite email if service configured
+	if t.emailSvc != nil {
+		_ = t.emailSvc.SendInvite(ctx, email, token)
 	}
 	if t.auditRepo != nil {
 		_ = t.auditRepo.Log(ctx, &entity.AuditLog{BusinessID: businessID, Action: "invite_user", UserID: 0, CreatedAt: time.Now()})

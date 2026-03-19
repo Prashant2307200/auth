@@ -118,12 +118,17 @@ func main() {
 
 	v1 := http.NewServeMux()
 
-	// Health endpoint (public)
+	// Health endpoints (public)
+	// keep existing health usecase handler for backward compatibility
 	healthUseCase := usecase.NewHealthUseCase(userRepo, rdb.Rdb)
 	healthHandler := handler.NewHealthHandler(healthUseCase)
-	// Register at top-level so it's not wrapped by auth middleware under /api/v1
 	v1.Handle("/health", healthHandler)
 	v1.Handle("/health/", healthHandler)
+
+	// System-level live/ready endpoints that perform DB + Redis checks
+	sysHealth := handler.NewSystemHealthHandler(database.Db, rdb.Rdb)
+	v1.HandleFunc("/health/live", sysHealth.Live)
+	v1.HandleFunc("/health/ready", sysHealth.Ready)
 
 	if cfg.Env == "dev" {
 		devHandler := handler.NewDevHandler(userRepo, businessRepo)
