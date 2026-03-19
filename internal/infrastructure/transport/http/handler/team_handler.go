@@ -42,30 +42,14 @@ func (h *TeamHandler) invite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate email; if usecase is present, prefer centralized validation helpers
-	if h.UC != nil {
-		if err := h.UC.ValidateInviteEmail(req.Email); err != nil {
-			uutils.SendErrorResponse(w, http.StatusBadRequest, uutils.BAD_REQUEST, err.Error())
-			return
-		}
-	} else {
-		if req.Email == "" || !isValidEmail(req.Email) {
-			uutils.SendErrorResponse(w, http.StatusBadRequest, uutils.BAD_REQUEST, "invalid email format")
-			return
-		}
+	if err := h.UC.ValidateInviteEmail(req.Email); err != nil {
+		uutils.SendErrorResponse(w, http.StatusBadRequest, uutils.BAD_REQUEST, err.Error())
+		return
 	}
 
-	// Validate role
-	if h.UC != nil {
-		if err := h.UC.ValidateRole(req.Role); err != nil {
-			uutils.SendErrorResponse(w, http.StatusBadRequest, uutils.BAD_REQUEST, err.Error())
-			return
-		}
-	} else {
-		if req.Role < 1 || req.Role > 4 {
-			uutils.SendErrorResponse(w, http.StatusBadRequest, uutils.BAD_REQUEST, "role must be between 1 and 4")
-			return
-		}
+	if err := h.UC.ValidateRole(req.Role); err != nil {
+		uutils.SendErrorResponse(w, http.StatusBadRequest, uutils.BAD_REQUEST, err.Error())
+		return
 	}
 
 	businessID := middleware.GetTenantID(r)
@@ -121,8 +105,8 @@ func (h *TeamHandler) updateMemberRole(w http.ResponseWriter, r *http.Request) {
 		uutils.SendErrorResponse(w, http.StatusBadRequest, uutils.BAD_REQUEST, "bad request")
 		return
 	}
-	if body.Role < 1 || body.Role > 4 {
-		uutils.SendErrorResponse(w, http.StatusBadRequest, uutils.BAD_REQUEST, "role must be between 1 and 4")
+	if err := h.UC.ValidateRole(body.Role); err != nil {
+		uutils.SendErrorResponse(w, http.StatusBadRequest, uutils.BAD_REQUEST, err.Error())
 		return
 	}
 	businessID := middleware.GetTenantID(r)
