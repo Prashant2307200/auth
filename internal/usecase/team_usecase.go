@@ -3,6 +3,8 @@ package usecase
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/Prashant2307200/auth-service/internal/entity"
@@ -55,8 +57,46 @@ func (t *teamUsecase) InviteUser(ctx context.Context, businessID int64, email st
 }
 
 func (t *teamUsecase) AcceptInvitation(ctx context.Context, inviteToken string) error {
-	// Token-based invites not implemented in this minimal version
-	return ErrNotImplemented
+	if t.memberRepo == nil {
+		return ErrNotImplemented
+	}
+
+	var memberID int64
+	if _, err := fmt.Sscanf(inviteToken, "member_%d", &memberID); err != nil {
+		if id, parseErr := strconv.ParseInt(inviteToken, 10, 64); parseErr == nil {
+			memberID = id
+		} else {
+			return errors.New("invalid invite token format")
+		}
+	}
+
+	member, err := t.memberRepo.GetByID(ctx, memberID)
+	if err != nil {
+		return err
+	}
+
+	if member.Status != entity.MemberStatusPending {
+		return errors.New("invitation is not pending")
+	}
+
+	now := time.Now()
+	member.Status = entity.MemberStatusActive
+	member.AcceptedAt = &now
+
+	if err := t.memberRepo.Update(ctx, member); err != nil {
+		return err
+	}
+
+	if t.auditRepo != nil {
+		_ = t.auditRepo.Log(ctx, &entity.AuditLog{
+			BusinessID: member.BusinessID,
+			Action:     "accept_invitation",
+			UserID:     0,
+			CreatedAt:  time.Now(),
+		})
+	}
+
+	return nil
 }
 
 func (t *teamUsecase) ListMembers(ctx context.Context, businessID int64) ([]*entity.BusinessMember, error) {
