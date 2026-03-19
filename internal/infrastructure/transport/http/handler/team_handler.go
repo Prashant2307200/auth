@@ -25,6 +25,7 @@ func (h *TeamHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/team/members", h.listMembers)
 	mux.HandleFunc("PATCH /api/v1/team/members/", h.updateMemberRole) // expects /.../members/{id}/role
 	mux.HandleFunc("DELETE /api/v1/team/members/", h.removeMember)    // expects /.../members/{id}
+	mux.HandleFunc("POST /api/v1/team/invites/", h.revokeInvitation)  // expects /.../invites/{token}/revoke
 }
 
 type inviteRequest struct {
@@ -140,6 +141,39 @@ func (h *TeamHandler) removeMember(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"message":"removed"}`))
+}
+
+func (h *TeamHandler) revokeInvitation(w http.ResponseWriter, r *http.Request) {
+	// Extract token from path: /api/v1/team/invites/{token}/revoke
+	parts := strings.Split(r.URL.Path, "/")
+	if len(parts) < 6 || parts[5] != "revoke" {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	token := parts[4]
+	if token == "" {
+		http.Error(w, "token is required", http.StatusBadRequest)
+		return
+	}
+
+	err := h.UC.RevokeInvitation(r.Context(), token)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			http.Error(w, "invitation not found", http.StatusNotFound)
+			return
+		}
+		if strings.Contains(err.Error(), "cannot revoke") {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		slog.Error("failed to revoke invitation", slog.Any("error", err))
+		http.Error(w, "failed to revoke invitation", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{"message": "invitation revoked"})
 }
 
 func isValidEmail(email string) bool {
