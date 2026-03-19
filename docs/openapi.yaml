@@ -1,100 +1,1729 @@
-openapi: 3.1.0
+openapi: '3.1.0'
 info:
-  title: Chatty Auth Service API
-  version: 1.0.0
-  description: OpenAPI 3.1 spec for auth-service (register, teams, health)
+  title: Auth Service API
+  description: |
+    Authentication, user management, business multi-tenancy, and team management microservice.
+
+    ## Authentication
+    Most endpoints require cookie-based JWT authentication. After a successful login or
+    register call the server sets `access_token` (15 min TTL) and `refresh_token` (7 day TTL)
+    as HttpOnly cookies. Pass them automatically via the browser or include them in the
+    `Cookie` header.
+
+    ## Rate Limiting
+    The `/api/v1/auth/register/` and `/api/v1/auth/login/` endpoints are rate-limited to
+    **5 requests per minute** per IP. When exceeded the server responds with `429` and a
+    `Retry-After: 60` header.
+  version: '1.0.0'
+  contact:
+    name: API Support
+
 servers:
-  - url: http://localhost:8080
+  - url: http://localhost:{port}
+    description: Local development
+    variables:
+      port:
+        default: '8080'
+
+tags:
+  - name: Auth
+    description: Authentication (register, login, logout, profile, tokens)
+  - name: Users
+    description: User CRUD operations
+  - name: Business
+    description: Business / organisation management
+  - name: Team
+    description: Team member and invitation management
+  - name: Health
+    description: Health and readiness probes
+  - name: Metrics
+    description: Prometheus metrics
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
 paths:
-  /auth/register:
+  # ==========================================================================
+  # Auth
+  # ==========================================================================
+  /api/v1/auth/register/:
     post:
+      operationId: register
       summary: Register a new user
+      description: |
+        Creates a new user account. Optionally accepts an invite token or business slug
+        to associate the user with a business on registration.
+        Sets `access_token` and `refresh_token` cookies on success.
+        **Rate-limited: 5 requests per minute.**
+      tags: [Auth]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                email:
-                  type: string
-                password:
-                  type: string
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '200':
+          description: User registered successfully
+          headers:
+            Set-Cookie:
+              description: access_token and refresh_token cookies
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                status: success
+                message: user registered successfully
+        '400':
+          description: Validation error or bad request
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorResponse'
+                  - $ref: '#/components/schemas/ValidationErrorResponse'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/auth/login/:
+    post:
+      operationId: login
+      summary: Log in
+      description: |
+        Authenticates a user with email and password.
+        Sets `access_token` and `refresh_token` cookies on success.
+        **Rate-limited: 5 requests per minute.**
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Logged in successfully
+          headers:
+            Set-Cookie:
+              description: access_token and refresh_token cookies
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                status: success
+                message: user logged in successfully
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorResponse'
+                  - $ref: '#/components/schemas/ValidationErrorResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: UNAUTHORIZED
+                message: invalid email or password
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/v1/auth/logout/:
+    delete:
+      operationId: logout
+      summary: Log out
+      description: Invalidates the current session and clears authentication cookies.
+      tags: [Auth]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Logged out successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                status: success
+                message: user logged out successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/auth/profile/:
+    get:
+      operationId: getProfile
+      summary: Get current user profile
+      description: Returns the authenticated user's full profile.
+      tags: [Auth]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    put:
+      operationId: updateProfile
+      summary: Update current user profile
+      description: Partially updates the authenticated user's profile. Only provided fields are changed.
+      tags: [Auth]
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileUpdateRequest'
+      responses:
+        '200':
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                status: success
+                message: user profile updated successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      operationId: deleteProfile
+      summary: Delete current user profile
+      description: Permanently deletes the authenticated user's account.
+      tags: [Auth]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Profile deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                status: success
+                message: user profile deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/auth/refresh/:
+    get:
+      operationId: refreshSession
+      summary: Refresh access token
+      description: |
+        Uses the `refresh_token` cookie to issue a new access token and refresh token pair.
+        Both cookies are replaced.
+      tags: [Auth]
+      security:
+        - refreshTokenAuth: []
+      responses:
+        '200':
+          description: Session refreshed
+          headers:
+            Set-Cookie:
+              description: New access_token and refresh_token cookies
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                status: success
+                message: session refreshed successfully
+        '401':
+          description: Refresh token missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: UNAUTHORIZED
+                message: refresh token not found
+
+  /api/v1/auth/public-key:
+    get:
+      operationId: getPublicKey
+      summary: Get JWT public key
+      description: Returns the RSA public key in PEM format used to verify access tokens.
+      tags: [Auth]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: PEM-encoded RSA public key
+          content:
+            application/x-pem-file:
+              schema:
+                type: string
+                format: binary
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/auth/upload-signature:
+    get:
+      operationId: getUploadSignature
+      summary: Get Cloudinary upload signature
+      description: Generates a signed upload request for the authenticated user to upload files to Cloudinary.
+      tags: [Auth]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Upload signature details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadSignature'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ==========================================================================
+  # Users
+  # ==========================================================================
+  /api/v1/users/:
+    get:
+      operationId: listUsers
+      summary: List all users
+      description: Returns all users visible to the authenticated user.
+      tags: [Users]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Array of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      operationId: createUser
+      summary: Create a user
+      description: Creates a new user (admin operation).
+      tags: [Users]
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/User'
+      responses:
+        '200':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                status: success
+                message: user created successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/users/search:
+    get:
+      operationId: searchUsers
+      summary: Search users
+      description: Searches users by name or email.
+      tags: [Users]
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Search query string
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Matching users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/users/{id}/:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+
+    get:
+      operationId: getUserById
+      summary: Get user by ID
+      tags: [Users]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: User object
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      operationId: updateUserById
+      summary: Update user by ID
+      tags: [Users]
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/User'
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                status: success
+                message: user updated successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      operationId: deleteUserById
+      summary: Delete user by ID
+      tags: [Users]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: User deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                status: success
+                message: user deleted successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ==========================================================================
+  # Business
+  # ==========================================================================
+  /api/v1/business/:
+    post:
+      operationId: createBusiness
+      summary: Create a business
+      description: Creates a new business organisation owned by the authenticated user.
+      tags: [Business]
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessCreateRequest'
       responses:
         '201':
-          description: Created
+          description: Business created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Business'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/business/my:
+    get:
+      operationId: getMyBusinesses
+      summary: List businesses for current user
+      description: Returns all businesses the authenticated user belongs to.
+      tags: [Business]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Array of businesses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Business'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/business/{id}/:
+    parameters:
+      - $ref: '#/components/parameters/BusinessId'
+
+    get:
+      operationId: getBusinessById
+      summary: Get business by ID
+      tags: [Business]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Business object
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Business'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      operationId: updateBusiness
+      summary: Update business
+      tags: [Business]
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessCreateRequest'
+      responses:
+        '200':
+          description: Business updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                status: success
+                message: business updated successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    delete:
+      operationId: deleteBusiness
+      summary: Delete business
+      tags: [Business]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Business deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                status: success
+                message: business deleted successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/business/{id}/users/:
+    parameters:
+      - $ref: '#/components/parameters/BusinessId'
+
+    get:
+      operationId: getBusinessUsers
+      summary: List business users
+      description: Returns all users belonging to the specified business.
+      tags: [Business]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Array of business users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BusinessUser'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      operationId: addBusinessUser
+      summary: Add user to business
+      tags: [Business]
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddBusinessUserRequest'
+      responses:
+        '200':
+          description: User added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                status: success
+                message: user added to business successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/business/{id}/users/{userId}/:
+    parameters:
+      - $ref: '#/components/parameters/BusinessId'
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+
+    delete:
+      operationId: removeBusinessUser
+      summary: Remove user from business
+      tags: [Business]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: User removed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                status: success
+                message: user removed from business successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/business/{id}/invites/:
+    parameters:
+      - $ref: '#/components/parameters/BusinessId'
+
+    get:
+      operationId: listBusinessInvites
+      summary: List business invites
+      tags: [Business]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Array of invites
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BusinessInvite'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      operationId: createBusinessInvite
+      summary: Create business invite
+      description: Sends an invitation email to join the business.
+      tags: [Business]
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInviteRequest'
+      responses:
+        '201':
+          description: Invite created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BusinessInvite'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/business/{id}/invites/{inviteId}/:
+    parameters:
+      - $ref: '#/components/parameters/BusinessId'
+      - name: inviteId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+
+    delete:
+      operationId: revokeBusinessInvite
+      summary: Revoke business invite
+      tags: [Business]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Invite revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                status: success
+                message: invite revoked successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/business/{id}/domains/:
+    parameters:
+      - $ref: '#/components/parameters/BusinessId'
+
+    post:
+      operationId: addBusinessDomain
+      summary: Add domain to business
+      tags: [Business]
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddDomainRequest'
+      responses:
+        '201':
+          description: Domain added
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BusinessDomain'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/business/{id}/domains/verify/:
+    parameters:
+      - $ref: '#/components/parameters/BusinessId'
+
+    post:
+      operationId: verifyBusinessDomain
+      summary: Verify business domain
+      description: Verifies ownership of a domain using a verification token.
+      tags: [Business]
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyDomainRequest'
+      responses:
+        '200':
+          description: Domain verified
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BusinessDomain'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/business/{id}/domains/{domainId}/:
+    parameters:
+      - $ref: '#/components/parameters/BusinessId'
+      - name: domainId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+
+    put:
+      operationId: toggleDomainAutoJoin
+      summary: Toggle domain auto-join
+      description: Enables or disables automatic user joining for a verified domain.
+      tags: [Business]
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ToggleDomainAutoJoinRequest'
+      responses:
+        '200':
+          description: Auto-join toggled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                status: success
+                message: domain auto-join updated successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ==========================================================================
+  # Team
+  # ==========================================================================
   /api/v1/team/invite:
     post:
-      summary: Invite a user to a team
+      operationId: teamInvite
+      summary: Invite a user to the team
+      description: Sends an invitation to the given email address to join the current tenant.
+      tags: [Team]
+      security:
+        - cookieAuth: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                email:
-                  type: string
-                role:
-                  type: integer
+              $ref: '#/components/schemas/TeamInviteRequest'
       responses:
         '201':
-          description: Invite sent
+          description: Invitation sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invite_token:
+                    type: string
+                    description: Token the invitee uses to accept
+                  message:
+                    type: string
+              example:
+                invite_token: abc123token
+                message: invitation sent
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /api/v1/team/members:
     get:
-      summary: List members of a team
+      operationId: listTeamMembers
+      summary: List team members
+      description: Returns all members of the current tenant's team.
+      tags: [Team]
+      security:
+        - cookieAuth: []
       responses:
         '200':
-          description: OK
+          description: Array of team members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BusinessMember'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /api/v1/team/members/{id}/role:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Member ID
+        schema:
+          type: integer
+          format: int64
+
     patch:
-      summary: Update member role
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
+      operationId: updateTeamMemberRole
+      summary: Update team member role
+      tags: [Team]
+      security:
+        - cookieAuth: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                role:
-                  type: integer
+              $ref: '#/components/schemas/UpdateRoleRequest'
       responses:
         '200':
-          description: Updated
+          description: Role updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+              example:
+                message: updated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /api/v1/team/members/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Member ID
+        schema:
+          type: integer
+          format: int64
+
     delete:
-      summary: Remove a member
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
+      operationId: removeTeamMember
+      summary: Remove team member
+      tags: [Team]
+      security:
+        - cookieAuth: []
       responses:
         '200':
-          description: Removed
+          description: Member removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+              example:
+                message: removed
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/team/invites/{token}/revoke:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Invitation token to revoke
+        schema:
+          type: string
+
+    post:
+      operationId: revokeTeamInvitation
+      summary: Revoke a team invitation
+      tags: [Team]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Invitation revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+              example:
+                message: invitation revoked
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ==========================================================================
+  # Health
+  # ==========================================================================
   /health:
     get:
-      summary: Basic health endpoint (legacy)
+      operationId: healthCheck
+      summary: General health check
+      description: Returns service health including database and Redis connectivity.
+      tags: [Health]
       responses:
         '200':
-          description: OK
+          description: Health status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+
   /health/live:
     get:
+      operationId: livenessProbe
       summary: Liveness probe
+      description: Returns 200 with body `ok` when the process is alive and the database is reachable.
+      tags: [Health]
       responses:
         '200':
-          description: Live
+          description: Service is alive
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: ok
+        '503':
+          description: Service unavailable (database unreachable)
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: ok
+
   /health/ready:
     get:
+      operationId: readinessProbe
       summary: Readiness probe
+      description: Returns detailed readiness information including database and Redis status.
+      tags: [Health]
       responses:
         '200':
-          description: Ready
-components: {}
+          description: Readiness status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyStatus'
+
+  # ==========================================================================
+  # Metrics
+  # ==========================================================================
+  /metrics:
+    get:
+      operationId: prometheusMetrics
+      summary: Prometheus metrics
+      description: |
+        Exposes Prometheus-format metrics including:
+        - `auth_invites_sent_total`
+        - `auth_invites_accepted_total`
+        - `auth_invites_revoked_total`
+        - `auth_token_verifications_total`
+        - `auth_token_verification_duration_seconds`
+      tags: [Metrics]
+      responses:
+        '200':
+          description: Prometheus metrics in text exposition format
+          content:
+            text/plain:
+              schema:
+                type: string
+
+# ---------------------------------------------------------------------------
+# Components
+# ---------------------------------------------------------------------------
+components:
+  # ========== Schemas ==========
+  schemas:
+    # ------ Error / Success envelopes ------
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum:
+            - BAD_REQUEST
+            - UNAUTHORIZED
+            - FORBIDDEN
+            - NOT_FOUND
+            - CONFLICT
+            - INTERNAL_ERROR
+            - RATE_LIMITED
+          description: Machine-readable error code
+        message:
+          type: string
+          description: Human-readable error message
+        details:
+          type: string
+          description: Optional additional details
+
+    ValidationErrorResponse:
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+      description: Structured field-level validation errors
+
+    GeneralErrorResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [OK, ERROR]
+        error:
+          type: string
+          description: Error message
+
+    SuccessResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [success]
+        message:
+          type: string
+        data:
+          description: Optional response payload
+
+    # ------ Auth DTOs ------
+    RegisterRequest:
+      type: object
+      required: [username, email, password]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 20
+          description: Unique username (alphanumeric and underscore)
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 8
+        first_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+        last_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+        phone:
+          type: string
+          description: Phone number in E.164 format
+        profile_pic:
+          type: string
+          description: URL to profile picture
+        role:
+          type: integer
+          description: 'User role (0 = user, 1 = admin)'
+        invite_token:
+          type: string
+          description: Invitation token to join a business on registration
+        business_slug:
+          type: string
+          description: Business slug to associate with on registration
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 1
+
+    ProfileUpdateRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 20
+        email:
+          type: string
+          format: email
+        profile_pic:
+          type: string
+
+    # ------ User entity ------
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          readOnly: true
+        username:
+          type: string
+          minLength: 3
+          maxLength: 20
+        email:
+          type: string
+          format: email
+        profile_pic:
+          type: string
+        role:
+          type: integer
+          description: 'Numeric role (0 = user, 1 = admin)'
+        business_id:
+          type: integer
+          format: int64
+          nullable: true
+        tenant_id:
+          type: integer
+          format: int64
+        role_name:
+          type: string
+          enum: [admin, manager, member, viewer]
+        status:
+          type: string
+          enum: [pending, active, revoked]
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      description: |
+        User entity. The password field is never included in JSON responses.
+
+    # ------ Business entities ------
+    Business:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          readOnly: true
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        slug:
+          type: string
+          minLength: 2
+          maxLength: 50
+        email:
+          type: string
+          format: email
+        owner_id:
+          type: integer
+          format: int64
+        public_key:
+          type: string
+        plan:
+          type: string
+          enum: [free, pro, enterprise]
+        created_by_id:
+          type: integer
+          format: int64
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+        signup_policy:
+          type: string
+          enum: [closed, open, invite_only]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    BusinessUser:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        business_id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        role:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    BusinessInvite:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        business_id:
+          type: integer
+          format: int64
+        email:
+          type: string
+          format: email
+        role:
+          type: integer
+        invited_by:
+          type: integer
+          format: int64
+        token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [pending, accepted, revoked, expired]
+        accepted_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    BusinessDomain:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        business_id:
+          type: integer
+          format: int64
+        domain:
+          type: string
+        verified:
+          type: boolean
+        auto_join_enabled:
+          type: boolean
+        verification_token:
+          type: string
+        verified_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    BusinessMember:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        business_id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+          nullable: true
+        email:
+          type: string
+        role_id:
+          type: integer
+          format: int64
+        status:
+          type: string
+          enum: [pending, active, revoked]
+        invited_by:
+          type: integer
+          format: int64
+          nullable: true
+        invited_at:
+          type: string
+          format: date-time
+        accepted_at:
+          type: string
+          format: date-time
+          nullable: true
+        invite_token:
+          type: string
+        token_expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    # ------ Business request DTOs ------
+    BusinessCreateRequest:
+      type: object
+      required: [name, slug, email]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        slug:
+          type: string
+          minLength: 2
+          maxLength: 50
+        email:
+          type: string
+          format: email
+
+    AddBusinessUserRequest:
+      type: object
+      required: [user_id]
+      properties:
+        user_id:
+          type: integer
+          format: int64
+          minimum: 1
+        role:
+          type: integer
+          minimum: 0
+          maximum: 2
+
+    CreateInviteRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+        role:
+          type: integer
+          minimum: 0
+          maximum: 2
+
+    AddDomainRequest:
+      type: object
+      required: [domain]
+      properties:
+        domain:
+          type: string
+          minLength: 2
+
+    VerifyDomainRequest:
+      type: object
+      required: [verification_token]
+      properties:
+        verification_token:
+          type: string
+
+    ToggleDomainAutoJoinRequest:
+      type: object
+      properties:
+        auto_join_enabled:
+          type: boolean
+
+    # ------ Team DTOs ------
+    TeamInviteRequest:
+      type: object
+      required: [email, role]
+      properties:
+        email:
+          type: string
+          format: email
+        role:
+          type: integer
+          description: Role ID to assign to the invitee
+
+    UpdateRoleRequest:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: integer
+          description: New role ID
+
+    # ------ Cloud ------
+    UploadSignature:
+      type: object
+      properties:
+        upload_url:
+          type: string
+          format: uri
+        api_key:
+          type: string
+        signature:
+          type: string
+        timestamp:
+          type: string
+        folder:
+          type: string
+        public_id:
+          type: string
+        cloud_name:
+          type: string
+
+    # ------ Health ------
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded]
+        database:
+          type: string
+          enum: [ok, down]
+        redis:
+          type: string
+          enum: [ok, down]
+        timestamp:
+          type: string
+          format: date-time
+
+    ReadyStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded]
+        timestamp:
+          type: string
+          format: date-time
+        services:
+          type: object
+          properties:
+            database:
+              type: string
+              enum: [ok, down]
+            redis:
+              type: string
+              enum: [ok, down]
+
+  # ========== Parameters ==========
+  parameters:
+    UserId:
+      name: id
+      in: path
+      required: true
+      description: User ID
+      schema:
+        type: integer
+        format: int64
+
+    BusinessId:
+      name: id
+      in: path
+      required: true
+      description: Business ID
+      schema:
+        type: integer
+        format: int64
+
+  # ========== Reusable Responses ==========
+  responses:
+    BadRequest:
+      description: Bad request or validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: BAD_REQUEST
+            message: invalid input
+
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: UNAUTHORIZED
+            message: authentication required
+
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: FORBIDDEN
+            message: forbidden
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: NOT_FOUND
+            message: resource not found
+
+    RateLimited:
+      description: Rate limit exceeded (5 requests per minute)
+      headers:
+        Retry-After:
+          description: Seconds until rate limit resets
+          schema:
+            type: integer
+            example: 60
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: RATE_LIMITED
+            message: Rate limit exceeded
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: INTERNAL_ERROR
+            message: internal error
+
+  # ========== Security Schemes ==========
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: access_token
+      description: |
+        JWT access token set as an HttpOnly cookie after login or register.
+        TTL: 15 minutes. SameSite: Lax.
+
+    refreshTokenAuth:
+      type: apiKey
+      in: cookie
+      name: refresh_token
+      description: |
+        Refresh token set as an HttpOnly cookie after login or register.
+        TTL: 7 days. Used only by the /api/v1/auth/refresh/ endpoint.
