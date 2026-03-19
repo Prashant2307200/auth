@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/Prashant2307200/auth-service/internal/entity"
+	uutils "github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/utils"
 )
 
 // RequireRole returns middleware that enforces a specific role
@@ -12,7 +13,7 @@ func RequireRole(requiredRole string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			userRole := GetUserRole(r)
 			if userRole != requiredRole {
-				http.Error(w, "Forbidden - insufficient permissions", http.StatusForbidden)
+				uutils.SendErrorResponse(w, http.StatusForbidden, uutils.FORBIDDEN, "Forbidden - insufficient permissions")
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -33,7 +34,7 @@ func RequireAnyRole(allowedRoles ...string) func(http.Handler) http.Handler {
 				}
 			}
 			if !allowed {
-				http.Error(w, "Forbidden - insufficient permissions", http.StatusForbidden)
+				uutils.SendErrorResponse(w, http.StatusForbidden, uutils.FORBIDDEN, "Forbidden - insufficient permissions")
 				return
 			}
 			next.ServeHTTP(w, r)

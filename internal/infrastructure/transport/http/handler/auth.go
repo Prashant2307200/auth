@@ -8,6 +8,8 @@ import (
 	"github.com/Prashant2307200/auth-service/internal/entity"
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/dto"
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/middleware"
+	// uutils intentionally not used here; keep import for future structured errors
+	_ "github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/utils"
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/utils/request"
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/utils/response"
 	"github.com/Prashant2307200/auth-service/internal/usecase"

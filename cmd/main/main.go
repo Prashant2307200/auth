@@ -19,6 +19,7 @@ import (
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/handler"
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/logging"
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/middleware"
+	"github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/utils"
 	"github.com/Prashant2307200/auth-service/internal/seeder"
 	"github.com/Prashant2307200/auth-service/internal/service"
 	grpcserver "github.com/Prashant2307200/auth-service/internal/transport/grpc/server"
@@ -138,6 +139,9 @@ func main() {
 	authMiddleware := middleware.Authenticate(tokenService, cfg.Env)
 	v1.Handle("/api/v1/", authMiddleware(http.StripPrefix("/api/v1", router)))
 
+	// Register Prometheus metrics endpoint after other v1 routes are configured.
+	handler.RegisterMetricsHandler(v1)
+
 	handler := middleware.SecurityHeaders(logging.RequestIDMiddleware(v1))
 	server := &http.Server{
 		Addr:              cfg.HttpServer.Addr,
@@ -202,7 +206,7 @@ func wrapRateLimitedRoutes(handler http.Handler, limiter *ratelimit.RateLimiter,
 			if strings.HasPrefix(r.URL.Path, route) {
 				if !limiter.Allow(r) {
 					w.Header().Set("Retry-After", "60")
-					http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+					utils.SendErrorResponse(w, http.StatusTooManyRequests, utils.RATE_LIMITED, "Rate limit exceeded")
 					return
 				}
 				break

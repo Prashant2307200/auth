@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	uutils "github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/utils"
 	"github.com/Prashant2307200/auth-service/internal/service"
 )
 
@@ -45,13 +46,14 @@ func Authenticate(tokenService *service.JWTTokenService, env string) func(http.H
 
 			accessCookie, err := r.Cookie("access_token")
 			if err != nil {
-				http.Error(w, "Unauthorized - error reading access token", http.StatusUnauthorized)
+				// standardized JSON error
+				uutils.SendErrorResponse(w, http.StatusUnauthorized, uutils.UNAUTHORIZED, "Unauthorized - error reading access token")
 				return
 			}
 
 			userID, err := tokenService.VerifyToken(ctxWithTimeout, accessCookie.Value)
 			if err != nil {
-				http.Error(w, "Unauthorized - invalid token", http.StatusUnauthorized)
+				uutils.SendErrorResponse(w, http.StatusUnauthorized, uutils.UNAUTHORIZED, "Unauthorized - invalid token")
 				return
 			}
 

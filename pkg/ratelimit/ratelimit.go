@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/utils"
 	"golang.org/x/time/rate"
 )
 
@@ -84,7 +85,8 @@ func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !rl.Allow(r) {
 				w.Header().Set("Retry-After", fmt.Sprintf("%d", int(time.Second.Seconds())))
-				http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+				// use standardized error response
+				utils.SendErrorResponse(w, http.StatusTooManyRequests, utils.RATE_LIMITED, "Rate limit exceeded")
 				return
 			}
 			next.ServeHTTP(w, r)

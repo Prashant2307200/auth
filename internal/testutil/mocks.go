@@ -436,3 +436,16 @@ func (m *MockTeamUsecase) UpdateMemberRole(ctx context.Context, businessID int64
 	args := m.Called(ctx, businessID, memberID, newRole)
 	return args.Error(0)
 }
+
+// Validation helpers to satisfy the TeamUsecase interface
+func (m *MockTeamUsecase) ValidateInviteEmail(email string) error {
+	args := m.Called(email)
+	return args.Error(0)
+}
+
+func (m *MockTeamUsecase) ValidateRole(role int) error {
+	args := m.Called(role)
+	return args.Error(0)
+}
+
+// (duplicate methods removed)

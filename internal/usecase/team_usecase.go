@@ -8,6 +8,7 @@ import (
 
 	"github.com/Prashant2307200/auth-service/internal/entity"
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/repository"
+	apputils "github.com/Prashant2307200/auth-service/internal/utils"
 	invitetoken "github.com/Prashant2307200/auth-service/pkg/invitetoken"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -19,6 +20,9 @@ type TeamUsecase interface {
 	ListMembers(ctx context.Context, businessID int64) ([]*entity.BusinessMember, error)
 	RemoveMember(ctx context.Context, businessID int64, memberID int64) error
 	UpdateMemberRole(ctx context.Context, businessID int64, memberID int64, newRole int) error
+	// Validation helpers
+	ValidateInviteEmail(email string) error
+	ValidateRole(role int) error
 }
 
 type EmailService interface {
@@ -242,4 +246,21 @@ func (t *teamUsecase) UpdateMemberRole(ctx context.Context, businessID int64, me
 	}
 	m.RoleID = int64(newRole)
 	return t.memberRepo.Update(ctx, m)
+}
+
+// ValidateInviteEmail checks the email is non-empty and contains an '@' char
+func (t *teamUsecase) ValidateInviteEmail(email string) error {
+	// Reuse central utility validation to keep single source of truth
+	if err := apputils.ValidateEmail(email); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ValidateRole ensures role is within accepted range 1..4
+func (t *teamUsecase) ValidateRole(role int) error {
+	if role < 1 || role > 4 {
+		return fmt.Errorf("role must be between 1 and 4")
+	}
+	return nil
 }
