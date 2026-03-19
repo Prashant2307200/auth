@@ -9,6 +9,7 @@ import (
 	"github.com/Prashant2307200/auth-service/internal/entity"
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/repository"
 	invitetoken "github.com/Prashant2307200/auth-service/pkg/invitetoken"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 type TeamUsecase interface {
@@ -29,10 +30,41 @@ type teamUsecase struct {
 	auditRepo  repository.AuditRepository
 	emailSvc   EmailService
 	tokenGen   *invitetoken.Generator
+	metrics    *InviteMetrics
+}
+
+type InviteMetrics struct {
+	InvitesSentTotal     prometheus.Counter
+	InvitesAcceptedTotal prometheus.Counter
+	InvitesRevokedTotal  prometheus.Counter
+}
+
+func NewInviteMetrics() (*InviteMetrics, error) {
+	sent := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "auth_invites_sent_total",
+		Help: "Total number of invites sent",
+	})
+
+	accepted := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "auth_invites_accepted_total",
+		Help: "Total number of invites accepted",
+	})
+
+	revoked := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "auth_invites_revoked_total",
+		Help: "Total number of invites revoked",
+	})
+
+	return &InviteMetrics{
+		InvitesSentTotal:     sent,
+		InvitesAcceptedTotal: accepted,
+		InvitesRevokedTotal:  revoked,
+	}, nil
 }
 
 func NewTeamUsecase(m repository.MemberRepository, a repository.AuditRepository, e EmailService, tg *invitetoken.Generator) TeamUsecase {
-	return &teamUsecase{memberRepo: m, auditRepo: a, emailSvc: e, tokenGen: tg}
+	metrics, _ := NewInviteMetrics()
+	return &teamUsecase{memberRepo: m, auditRepo: a, emailSvc: e, tokenGen: tg, metrics: metrics}
 }
 
 var ErrNotImplemented = errors.New("not implemented")
@@ -78,6 +110,9 @@ func (t *teamUsecase) InviteUser(ctx context.Context, businessID int64, email st
 	}
 	if t.auditRepo != nil {
 		_ = t.auditRepo.Log(ctx, &entity.AuditLog{BusinessID: businessID, Action: "invite_user", UserID: 0, CreatedAt: time.Now()})
+	}
+	if t.metrics != nil {
+		t.metrics.InvitesSentTotal.Inc()
 	}
 	return token, nil
 }
@@ -126,6 +161,9 @@ func (t *teamUsecase) AcceptInvitation(ctx context.Context, inviteToken string) 
 			CreatedAt:  time.Now(),
 		})
 	}
+	if t.metrics != nil {
+		t.metrics.InvitesAcceptedTotal.Inc()
+	}
 
 	return nil
 }
@@ -160,6 +198,9 @@ func (t *teamUsecase) RevokeInvitation(ctx context.Context, inviteToken string) 
 			UserID:     0,
 			CreatedAt:  time.Now(),
 		})
+	}
+	if t.metrics != nil {
+		t.metrics.InvitesRevokedTotal.Inc()
 	}
 
 	return nil
