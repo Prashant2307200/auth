@@ -8,9 +8,9 @@ import (
 
 	"github.com/Prashant2307200/auth-service/internal/entity"
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/repository"
-	apputils "github.com/Prashant2307200/auth-service/internal/utils"
 	invitetoken "github.com/Prashant2307200/auth-service/pkg/invitetoken"
 	"github.com/prometheus/client_golang/prometheus"
+	"strings"
 )
 
 type TeamUsecase interface {
@@ -250,9 +250,19 @@ func (t *teamUsecase) UpdateMemberRole(ctx context.Context, businessID int64, me
 
 // ValidateInviteEmail checks the email is non-empty and contains an '@' char
 func (t *teamUsecase) ValidateInviteEmail(email string) error {
-	// Reuse central utility validation to keep single source of truth
-	if err := apputils.ValidateEmail(email); err != nil {
-		return err
+	if strings.TrimSpace(email) == "" {
+		return errors.New("email is required")
+	}
+	if len(email) < 5 || len(email) > 254 {
+		return errors.New("email length must be between 5 and 254 characters")
+	}
+	if !strings.Contains(email, "@") {
+		return errors.New("invalid email format")
+	}
+	// basic local@domain sanity checks
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return errors.New("invalid email format")
 	}
 	return nil
 }
@@ -260,7 +270,7 @@ func (t *teamUsecase) ValidateInviteEmail(email string) error {
 // ValidateRole ensures role is within accepted range 1..4
 func (t *teamUsecase) ValidateRole(role int) error {
 	if role < 1 || role > 4 {
-		return fmt.Errorf("role must be between 1 and 4")
+		return errors.New("role must be between 1 and 4")
 	}
 	return nil
 }
