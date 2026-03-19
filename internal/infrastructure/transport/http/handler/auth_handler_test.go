@@ -165,7 +165,7 @@ func TestAuthHandler_UploadSignature_Success(t *testing.T) {
 	h.uploadSignature(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code)
-	var got map[string]interface{}
+	var got map[string]any
 	require.NoError(t, json.NewDecoder(rr.Body).Decode(&got))
 	require.Equal(t, "https://api.cloudinary.com/v1_1/demo/image/upload", got["upload_url"])
 	require.Equal(t, "key", got["api_key"])

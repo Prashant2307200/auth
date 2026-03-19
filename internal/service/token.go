@@ -77,7 +77,7 @@ func generateJWT(userID string, secret string, ttl time.Duration) (string, error
 func (s *JWTTokenService) VerifyRefreshToken(ctx context.Context, tokenStr string) (string, error) {
 	claims := jwt.MapClaims{}
 
-	token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
@@ -114,7 +114,7 @@ func (s *JWTTokenService) GenerateAccessToken(userID int64, businessID ...int64)
 }
 
 func (s *JWTTokenService) VerifyToken(ctx context.Context, tokenStr string) (int64, error) {
-	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}

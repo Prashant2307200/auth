@@ -66,7 +66,7 @@ func (h *TeamHandler) invite(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"invite_token": token, "message": "invitation sent"})
+	_ = json.NewEncoder(w).Encode(map[string]any{"invite_token": token, "message": "invitation sent"})
 }
 
 func (h *TeamHandler) listMembers(w http.ResponseWriter, r *http.Request) {

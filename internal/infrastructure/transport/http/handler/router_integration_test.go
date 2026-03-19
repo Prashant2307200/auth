@@ -135,7 +135,7 @@ func TestRouterIntegration_ProtectedRouteSucceedsWithValidToken(t *testing.T) {
 	mux.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code)
-	var users []map[string]interface{}
+	var users []map[string]any
 	err = json.NewDecoder(rr.Body).Decode(&users)
 	require.NoError(t, err)
 	require.Len(t, users, 1)

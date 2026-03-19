@@ -27,7 +27,7 @@ func TestBusinessGetAll_Handler_OK(t *testing.T) {
 
 	h.getMyBusinesses(rr, req)
 	require.Equal(t, http.StatusOK, rr.Code)
-	var body []map[string]interface{}
+	var body []map[string]any
 	err := json.NewDecoder(rr.Body).Decode(&body)
 	require.NoError(t, err)
 	require.Len(t, body, 1)

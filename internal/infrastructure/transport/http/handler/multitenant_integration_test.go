@@ -137,6 +137,9 @@ func TestAuditLogging(t *testing.T) {
 		businessID := int64(500)
 		memberID := int64(25)
 
+		// Ensure GetByID is expected since RemoveMember now validates membership
+		member := &entity.BusinessMember{ID: memberID, BusinessID: businessID, Email: "member@test.com", Status: entity.MemberStatusActive}
+		mockMemberRepo.On("GetByID", ctx, memberID).Return(member, nil)
 		mockMemberRepo.On("Delete", ctx, memberID).Return(nil)
 
 		err := teamUseCase.RemoveMember(ctx, businessID, memberID)

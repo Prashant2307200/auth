@@ -197,7 +197,7 @@ func TestAccessToken_TableDriven(t *testing.T) {
 
 			// If business claim expected, parse token to check claim exists
 			if tc.wantBiz != nil {
-				parsed, err := jwt.Parse(tok, func(token *jwt.Token) (interface{}, error) {
+				parsed, err := jwt.Parse(tok, func(token *jwt.Token) (any, error) {
 					return s.PublicAccessSecret, nil
 				})
 				if err != nil || !parsed.Valid {

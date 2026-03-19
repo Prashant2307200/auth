@@ -11,13 +11,13 @@ import (
 var ErrNotFound = errors.New("resource not found")
 
 // QueryRow handles common query row operations with proper error handling
-func QueryRow(ctx context.Context, db *sql.DB, query string, args ...interface{}) (*sql.Row, error) {
+func QueryRow(ctx context.Context, db *sql.DB, query string, args ...any) (*sql.Row, error) {
 	row := db.QueryRowContext(ctx, query, args...)
 	return row, nil
 }
 
 // QueryRows handles common query operations with proper error handling
-func QueryRows(ctx context.Context, db *sql.DB, query string, args ...interface{}) (*sql.Rows, error) {
+func QueryRows(ctx context.Context, db *sql.DB, query string, args ...any) (*sql.Rows, error) {
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query execution failed: %w", err)
@@ -26,7 +26,7 @@ func QueryRows(ctx context.Context, db *sql.DB, query string, args ...interface{
 }
 
 // Exec handles common exec operations with proper error handling
-func Exec(ctx context.Context, db *sql.DB, query string, args ...interface{}) (sql.Result, error) {
+func Exec(ctx context.Context, db *sql.DB, query string, args ...any) (sql.Result, error) {
 	result, err := db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("execution failed: %w", err)
@@ -35,7 +35,7 @@ func Exec(ctx context.Context, db *sql.DB, query string, args ...interface{}) (s
 }
 
 // HandleNotFoundError wraps sql.ErrNoRows with a custom message and ErrNotFound for status mapping.
-func HandleNotFoundError(err error, resource string, identifier interface{}) error {
+func HandleNotFoundError(err error, resource string, identifier any) error {
 	if err == sql.ErrNoRows {
 		return fmt.Errorf("%s with identifier %v not found: %w", resource, identifier, ErrNotFound)
 	}
