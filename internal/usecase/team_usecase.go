@@ -14,6 +14,7 @@ import (
 type TeamUsecase interface {
 	InviteUser(ctx context.Context, businessID int64, email string, role int) (string, error)
 	AcceptInvitation(ctx context.Context, inviteToken string) error
+	RevokeInvitation(ctx context.Context, inviteToken string) error
 	ListMembers(ctx context.Context, businessID int64) ([]*entity.BusinessMember, error)
 	RemoveMember(ctx context.Context, businessID int64, memberID int64) error
 	UpdateMemberRole(ctx context.Context, businessID int64, memberID int64, newRole int) error
@@ -121,6 +122,41 @@ func (t *teamUsecase) AcceptInvitation(ctx context.Context, inviteToken string) 
 		_ = t.auditRepo.Log(ctx, &entity.AuditLog{
 			BusinessID: member.BusinessID,
 			Action:     "accept_invitation",
+			UserID:     0,
+			CreatedAt:  time.Now(),
+		})
+	}
+
+	return nil
+}
+
+func (t *teamUsecase) RevokeInvitation(ctx context.Context, inviteToken string) error {
+	if t.memberRepo == nil {
+		return ErrNotImplemented
+	}
+
+	member, err := t.memberRepo.GetByInviteToken(ctx, inviteToken)
+	if err != nil {
+		return fmt.Errorf("invite not found: %w", err)
+	}
+
+	// Only allow revoking pending invitations
+	if member.Status != entity.MemberStatusPending {
+		return fmt.Errorf("cannot revoke invitation with status %s", member.Status)
+	}
+
+	// Mark as revoked and clear invite token
+	member.Status = entity.MemberStatusRevoked
+	member.InviteToken = ""
+
+	if err := t.memberRepo.Update(ctx, member); err != nil {
+		return fmt.Errorf("failed to revoke invitation: %w", err)
+	}
+
+	if t.auditRepo != nil {
+		_ = t.auditRepo.Log(ctx, &entity.AuditLog{
+			BusinessID: member.BusinessID,
+			Action:     "revoke_invitation",
 			UserID:     0,
 			CreatedAt:  time.Now(),
 		})
