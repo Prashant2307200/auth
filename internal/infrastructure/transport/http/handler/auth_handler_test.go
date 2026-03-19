@@ -9,6 +9,7 @@ import (
 
 	"github.com/Prashant2307200/auth-service/internal/entity"
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/middleware"
+	uutils "github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/utils"
 	"github.com/Prashant2307200/auth-service/internal/testutil"
 	"github.com/Prashant2307200/auth-service/internal/usecase"
 	"github.com/Prashant2307200/auth-service/internal/usecase/interfaces"
@@ -29,6 +30,9 @@ func TestAuthHandler_Register_MalformedJSON(t *testing.T) {
 	h.register(rr, req)
 
 	require.Equal(t, http.StatusBadRequest, rr.Code)
+	var er uutils.ErrorResponse
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&er))
+	require.Equal(t, uutils.BAD_REQUEST, er.Code)
 }
 
 func TestAuthHandler_Register_ValidationError(t *testing.T) {
@@ -46,6 +50,10 @@ func TestAuthHandler_Register_ValidationError(t *testing.T) {
 	h.register(rr, req)
 
 	require.Equal(t, http.StatusBadRequest, rr.Code)
+	var got map[string]any
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&got))
+	_, ok := got["errors"]
+	require.True(t, ok)
 }
 
 func TestAuthHandler_Login_MalformedJSON(t *testing.T) {
@@ -61,6 +69,9 @@ func TestAuthHandler_Login_MalformedJSON(t *testing.T) {
 	h.login(rr, req)
 
 	require.Equal(t, http.StatusBadRequest, rr.Code)
+	var er uutils.ErrorResponse
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&er))
+	require.Equal(t, uutils.BAD_REQUEST, er.Code)
 }
 
 func TestAuthHandler_Profile_Unauthorized(t *testing.T) {
@@ -76,6 +87,9 @@ func TestAuthHandler_Profile_Unauthorized(t *testing.T) {
 	h.profile(rr, req)
 
 	require.Equal(t, http.StatusUnauthorized, rr.Code)
+	var er uutils.ErrorResponse
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&er))
+	require.Equal(t, uutils.UNAUTHORIZED, er.Code)
 }
 
 func TestAuthHandler_PublicKey_Success(t *testing.T) {
@@ -109,6 +123,9 @@ func TestAuthHandler_Refresh_NoCookie(t *testing.T) {
 	h.refresh(rr, req)
 
 	require.Equal(t, http.StatusUnauthorized, rr.Code)
+	var er uutils.ErrorResponse
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&er))
+	require.Equal(t, uutils.UNAUTHORIZED, er.Code)
 }
 
 func TestAuthHandler_Logout_Unauthorized(t *testing.T) {
@@ -124,6 +141,9 @@ func TestAuthHandler_Logout_Unauthorized(t *testing.T) {
 	h.logout(rr, req)
 
 	require.Equal(t, http.StatusUnauthorized, rr.Code)
+	var er uutils.ErrorResponse
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&er))
+	require.Equal(t, uutils.UNAUTHORIZED, er.Code)
 }
 
 func TestAuthHandler_UploadSignature_Unauthorized(t *testing.T) {
@@ -139,6 +159,9 @@ func TestAuthHandler_UploadSignature_Unauthorized(t *testing.T) {
 	h.uploadSignature(rr, req)
 
 	require.Equal(t, http.StatusUnauthorized, rr.Code)
+	var er uutils.ErrorResponse
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&er))
+	require.Equal(t, uutils.UNAUTHORIZED, er.Code)
 }
 
 func TestAuthHandler_UploadSignature_Success(t *testing.T) {
