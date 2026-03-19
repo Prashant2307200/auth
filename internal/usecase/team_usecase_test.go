@@ -159,3 +159,22 @@ func TestTeamUsecase_AcceptInvitation_WithMemberPrefix(t *testing.T) {
 
 	memberRepo.AssertExpectations(t)
 }
+
+func TestTeamUsecase_RemoveMember_CrossBusinessProtection(t *testing.T) {
+	memberRepo := new(testutil.MockMemberRepo)
+	auditRepo := new(testutil.MockAuditRepo)
+	var emailSvc interface {
+		SendInvite(context.Context, string, string) error
+	}
+
+	// member belongs to business 10 but we'll attempt to delete under business 99
+	member := &entity.BusinessMember{ID: 55, BusinessID: 10, Email: "x@x.com", Status: entity.MemberStatusActive}
+	memberRepo.On("GetByID", mock.Anything, int64(55)).Return(member, nil)
+
+	uc := NewTeamUsecase(memberRepo, auditRepo, emailSvc, invitetoken.NewGenerator("test-secret", 24))
+	err := uc.RemoveMember(context.Background(), 99, 55)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "does not belong to business")
+
+	memberRepo.AssertExpectations(t)
+}

@@ -140,6 +140,14 @@ func (t *teamUsecase) RemoveMember(ctx context.Context, businessID int64, member
 	if t.memberRepo == nil {
 		return ErrNotImplemented
 	}
+	// Ensure the member belongs to the business to prevent cross-business deletion
+	m, err := t.memberRepo.GetByID(ctx, memberID)
+	if err != nil {
+		return err
+	}
+	if m.BusinessID != businessID {
+		return errors.New("member does not belong to business")
+	}
 	// Soft delete semantics depend on repo; call Delete for now
 	return t.memberRepo.Delete(ctx, memberID)
 }
