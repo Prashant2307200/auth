@@ -2,10 +2,16 @@ package testutil
 
 import (
 	"context"
+	"errors"
 
 	"github.com/Prashant2307200/auth-service/internal/entity"
 	"github.com/Prashant2307200/auth-service/internal/usecase/interfaces"
 	"github.com/stretchr/testify/mock"
+)
+
+var (
+	ErrNotFound     = errors.New("not found")
+	ErrCannotRevoke = errors.New("cannot revoke invitation")
 )
 
 // MockUserRepo is a mock implementation of UserRepo interface
