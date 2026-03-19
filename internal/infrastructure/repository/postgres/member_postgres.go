@@ -149,6 +149,36 @@ func (m *MemberPostgres) ListByUser(ctx context.Context, userID int64) ([]*entit
 	return out, nil
 }
 
+func (m *MemberPostgres) GetByInviteToken(ctx context.Context, token string) (*entity.BusinessMember, error) {
+	q := `SELECT id, business_id, user_id, email, role_id, status, invited_by, invited_at, accepted_at, invite_token, token_expires_at, created_at, updated_at FROM business_members WHERE invite_token = $1`
+	row, err := db.QueryRow(ctx, m.Db, q, token)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query member by invite token: %w", err)
+	}
+	member := &entity.BusinessMember{}
+	var userIDNull sql.NullInt64
+	var acceptedAt sql.NullTime
+	var tokenExpires sql.NullTime
+	var inviteToken sql.NullString
+	if err := row.Scan(&member.ID, &member.BusinessID, &userIDNull, &member.Email, &member.RoleID, &member.Status, &member.InvitedBy, &member.InvitedAt, &acceptedAt, &inviteToken, &tokenExpires, &member.CreatedAt, &member.UpdatedAt); err != nil {
+		return nil, db.HandleNotFoundError(err, "member", token)
+	}
+	if userIDNull.Valid {
+		uid := userIDNull.Int64
+		member.UserID = &uid
+	}
+	if acceptedAt.Valid {
+		member.AcceptedAt = &acceptedAt.Time
+	}
+	if inviteToken.Valid {
+		member.InviteToken = inviteToken.String
+	}
+	if tokenExpires.Valid {
+		member.TokenExpiresAt = &tokenExpires.Time
+	}
+	return member, nil
+}
+
 func (m *MemberPostgres) Update(ctx context.Context, member *entity.BusinessMember) error {
 	if member == nil {
 		return fmt.Errorf("member cannot be nil")
