@@ -178,6 +178,13 @@ func (m *MockMemberRepo) Delete(ctx context.Context, id int64) error {
 	args := m.Called(ctx, id)
 	return args.Error(0)
 }
+func (m *MockMemberRepo) GetByInviteToken(ctx context.Context, token string) (*entity.BusinessMember, error) {
+	args := m.Called(ctx, token)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*entity.BusinessMember), args.Error(1)
+}
 
 // MockAuditRepo is a mock for AuditRepository
 type MockAuditRepo struct{ mock.Mock }
@@ -377,7 +384,6 @@ func (m *MockBusinessRepo) UpdateDomainAutoJoin(ctx context.Context, domainID in
 	args := m.Called(ctx, domainID, businessID, enabled)
 	return args.Error(0)
 }
-
 
 type MockEmailService struct {
 	mock.Mock
