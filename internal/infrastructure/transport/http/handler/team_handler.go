@@ -146,11 +146,11 @@ func (h *TeamHandler) removeMember(w http.ResponseWriter, r *http.Request) {
 func (h *TeamHandler) revokeInvitation(w http.ResponseWriter, r *http.Request) {
 	// Extract token from path: /api/v1/team/invites/{token}/revoke
 	parts := strings.Split(r.URL.Path, "/")
-	if len(parts) < 6 || parts[5] != "revoke" {
+	if len(parts) < 7 || parts[6] != "revoke" {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-	token := parts[4]
+	token := parts[5]
 	if token == "" {
 		http.Error(w, "token is required", http.StatusBadRequest)
 		return

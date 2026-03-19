@@ -399,3 +399,40 @@ func (m *MockEmailService) SendInvite(ctx context.Context, to string, token stri
 	args := m.Called(ctx, to, token)
 	return args.Error(0)
 }
+
+type MockTeamUsecase struct {
+	mock.Mock
+}
+
+func (m *MockTeamUsecase) InviteUser(ctx context.Context, businessID int64, email string, role int) (string, error) {
+	args := m.Called(ctx, businessID, email, role)
+	return args.Get(0).(string), args.Error(1)
+}
+
+func (m *MockTeamUsecase) AcceptInvitation(ctx context.Context, inviteToken string) error {
+	args := m.Called(ctx, inviteToken)
+	return args.Error(0)
+}
+
+func (m *MockTeamUsecase) RevokeInvitation(ctx context.Context, inviteToken string) error {
+	args := m.Called(ctx, inviteToken)
+	return args.Error(0)
+}
+
+func (m *MockTeamUsecase) ListMembers(ctx context.Context, businessID int64) ([]*entity.BusinessMember, error) {
+	args := m.Called(ctx, businessID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*entity.BusinessMember), args.Error(1)
+}
+
+func (m *MockTeamUsecase) RemoveMember(ctx context.Context, businessID int64, memberID int64) error {
+	args := m.Called(ctx, businessID, memberID)
+	return args.Error(0)
+}
+
+func (m *MockTeamUsecase) UpdateMemberRole(ctx context.Context, businessID int64, memberID int64, newRole int) error {
+	args := m.Called(ctx, businessID, memberID, newRole)
+	return args.Error(0)
+}
