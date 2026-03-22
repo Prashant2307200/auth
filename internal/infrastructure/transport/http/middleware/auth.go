@@ -75,8 +75,3 @@ func GetUserIDFromContext(ctx context.Context) (int64, error) {
 func WithUserID(ctx context.Context, id int64) context.Context {
 	return context.WithValue(ctx, userContextKey, id)
 }
-
-// ContextWithUserID is an alias for WithUserID for backward compatibility.
-func ContextWithUserID(ctx context.Context, userID int64) context.Context {
-	return WithUserID(ctx, userID)
-}

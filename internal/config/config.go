@@ -2,9 +2,9 @@ package config
 
 import (
 	"flag"
+	"log/slog"
 	"os"
 	"strings"
-	"log/slog"
 
 	"github.com/ilyakaznacheev/cleanenv"
 )
