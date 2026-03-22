@@ -26,7 +26,7 @@ func Connect(PostgresUri string) (*Postgres, error) {
 	config := DefaultPoolConfig()
 	ConfigurePool(db, config)
 
-	slog.Info("Connected to the database", 
+	slog.Info("Connected to the database",
 		slog.Int("max_open_conns", config.MaxOpenConns),
 		slog.Int("max_idle_conns", config.MaxIdleConns))
 

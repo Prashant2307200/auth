@@ -1,0 +1,1514 @@
+openapi: 3.0.3
+info:
+  title: "Auth Service API"
+  version: "2.0.0"
+  description: |
+    Authentication and user/business management service.
+
+    Provides endpoints for user registration, login, token refresh,
+    profile management, user administration, business, team resources,
+    password reset, email verification, MFA/TOTP, Google SSO, session management,
+    and audit logging.
+
+    **Auth:** Login/register set HttpOnly `access_token` and `refresh_token` cookies; same-site requests send them automatically. API tools may use `Authorization: Bearer <access_token>` where handlers read the verified user from middleware.
+
+    **MFA:** When MFA is enabled, login returns `mfa_required: true`. Client must then call `/auth/mfa/verify` with the TOTP code.
+
+    **Team:** Endpoints under `/api/v1/team/*` require header `X-Tenant-ID` with the business ID (tenant).
+servers:
+  - url: "http://localhost:8080"
+  - url: "https://api.example.com"
+paths:
+  /api/v1/auth/register:
+    post:
+      summary: Register a new user
+      description: >-
+        Create a new user account. Rate limited: 5 requests per minute per IP.
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreate'
+      responses:
+        "200":
+          description: User registered - returns auth tokens in cookies and success message
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/auth/login:
+    post:
+      summary: Login a user
+      description: >-
+        Authenticate with email/username and password. Rate limited: 5 requests per minute per IP.
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        "200":
+          description: Successful authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/auth/logout:
+    delete:
+      summary: Logout current user
+      description: Invalidate current access/refresh tokens. Uses cookie-based auth.
+      tags: [Auth]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Successfully logged out
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/auth/refresh:
+    get:
+      summary: Refresh access token using refresh token
+      description: Returns a new access token when provided a valid refresh token (e.g., cookie or Authorization header). Public endpoint but requires refresh token.
+      tags: [Auth]
+      parameters:
+        - in: header
+          name: Authorization
+          schema:
+            type: string
+          description: 'Bearer {refreshToken} (if using header)'
+      responses:
+        "200":
+          description: New tokens
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/auth/profile:
+    get:
+      summary: Get current user's profile
+      description: Return the profile of the authenticated user.
+      tags: [Auth]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+    put:
+      summary: Update current user's profile
+      description: Update fields of the authenticated user's profile.
+      tags: [Auth]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdate'
+      responses:
+        "200":
+          description: Updated user profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      summary: Delete current user's profile
+      description: Permanently delete the authenticated user's account.
+      tags: [Auth]
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: User deleted
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/auth/upload-signature:
+    get:
+      summary: Get pre-signed upload parameters
+      description: |
+        Returns Cloudinary upload params (signature, timestamp, api_key, etc.) for direct client-to-Cloudinary uploads.
+        Client should POST the image file to the returned upload_url with these params; Cloudinary returns secure_url.
+        Then pass that secure_url in PUT /profile as profile_pic.
+      tags: [Auth]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Upload signature params for direct Cloudinary upload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadSignature'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/auth/public-key:
+    get:
+      summary: Get public key
+      description: Returns server's RSA public key in PEM format for token verification.
+      tags: [Auth]
+      responses:
+        "200":
+          description: Public key (PEM format)
+          content:
+            application/x-pem-file:
+              schema:
+                type: string
+                example: |
+                  -----BEGIN PUBLIC KEY-----
+                  ...
+                  -----END PUBLIC KEY-----
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/auth/forgot-password:
+    post:
+      summary: Request password reset
+      description: |
+        Sends a password reset email to the specified address if the account exists.
+        Rate limited: 5 requests per minute per IP.
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+      responses:
+        "200":
+          description: Reset email sent (always returns success to prevent email enumeration)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/auth/reset-password:
+    post:
+      summary: Reset password with token
+      description: |
+        Resets user password using the token received via email.
+        Invalidates all existing sessions after successful reset.
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        "200":
+          description: Password reset successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          description: Invalid or expired reset token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/auth/send-verification:
+    post:
+      summary: Send email verification
+      description: Sends a verification email to the authenticated user's email address.
+      tags: [Auth]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Verification email sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        "400":
+          description: Email already verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/auth/verify-email:
+    get:
+      summary: Verify email address
+      description: Verifies the user's email using the token from the verification email.
+      tags: [Auth]
+      parameters:
+        - in: query
+          name: token
+          required: true
+          schema:
+            type: string
+          description: Email verification token
+      responses:
+        "200":
+          description: Email verified successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        "400":
+          description: Invalid or expired verification token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/auth/mfa/setup:
+    get:
+      summary: Setup MFA (get TOTP secret)
+      description: |
+        Generates a new TOTP secret for the authenticated user.
+        Returns the secret and a QR code URI for authenticator apps.
+        MFA is not enabled until /mfa/enable is called with a valid code.
+      tags: [MFA]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: MFA setup information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MFASetupResponse'
+        "400":
+          description: MFA already enabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/auth/mfa/enable:
+    post:
+      summary: Enable MFA
+      description: |
+        Enables MFA for the authenticated user after verifying the TOTP code.
+        Returns backup codes that should be stored securely.
+      tags: [MFA]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MFAVerifyRequest'
+      responses:
+        "200":
+          description: MFA enabled with backup codes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MFAEnableResponse'
+        "400":
+          description: Invalid TOTP code or MFA not set up
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/auth/mfa/verify:
+    post:
+      summary: Verify MFA code during login
+      description: |
+        Completes login when MFA is required.
+        Called after initial login returns `mfa_required: true`.
+        Accepts TOTP code or backup code.
+      tags: [MFA]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MFALoginRequest'
+      responses:
+        "200":
+          description: MFA verified - returns auth tokens
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        "400":
+          description: Invalid MFA code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "401":
+          description: Invalid or expired MFA session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/auth/mfa/disable:
+    post:
+      summary: Disable MFA
+      description: |
+        Disables MFA for the authenticated user.
+        Requires current password and valid TOTP code for security.
+      tags: [MFA]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MFADisableRequest'
+      responses:
+        "200":
+          description: MFA disabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        "400":
+          description: Invalid password or TOTP code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/auth/sso/google:
+    get:
+      summary: Initiate Google SSO
+      description: |
+        Redirects the user to Google's OAuth consent screen.
+        After authentication, Google redirects back to /sso/google/callback.
+      tags: [SSO]
+      responses:
+        "302":
+          description: Redirect to Google OAuth
+          headers:
+            Location:
+              schema:
+                type: string
+              description: Google OAuth authorization URL
+
+  /api/v1/auth/sso/google/callback:
+    get:
+      summary: Google SSO callback
+      description: |
+        Handles the OAuth callback from Google.
+        Creates or links user account and returns auth tokens.
+      tags: [SSO]
+      parameters:
+        - in: query
+          name: code
+          required: true
+          schema:
+            type: string
+          description: OAuth authorization code from Google
+        - in: query
+          name: state
+          schema:
+            type: string
+          description: CSRF state parameter
+      responses:
+        "200":
+          description: SSO successful - returns auth tokens
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        "400":
+          description: Invalid OAuth callback
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/auth/sessions:
+    get:
+      summary: List active sessions
+      description: Returns all active sessions for the authenticated user.
+      tags: [Sessions]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Session'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/auth/sessions/{sessionId}:
+    delete:
+      summary: Revoke a session
+      description: |
+        Revokes a specific session by ID.
+        Users can only revoke their own sessions.
+      tags: [Sessions]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Session ID to revoke
+      responses:
+        "200":
+          description: Session revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/audit-logs:
+    get:
+      summary: List audit logs
+      description: |
+        Returns filtered audit logs for the business.
+        Requires X-Tenant-ID header.
+      tags: [Audit]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: header
+          name: X-Tenant-ID
+          required: true
+          schema:
+            type: string
+          description: Business ID (tenant)
+        - in: query
+          name: user_id
+          schema:
+            type: integer
+          description: Filter by user ID
+        - in: query
+          name: action
+          schema:
+            type: string
+          description: Filter by action type (e.g., LOGIN, LOGOUT, MFA_ENABLED)
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date-time
+          description: Start time filter (ISO 8601)
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date-time
+          description: End time filter (ISO 8601)
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+          description: Maximum results per page
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            default: 0
+          description: Pagination offset
+      responses:
+        "200":
+          description: Audit log entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AuditLog'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+  /health:
+    get:
+      summary: Health check
+      description: Returns service health including database and redis connectivity.
+      tags: [Health]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/users:
+    get:
+      summary: List users
+      description: Return paginated list of users. Protected endpoint.
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+        - in: query
+          name: search
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Paginated users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+                  pagination:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      limit:
+                        type: integer
+                      total:
+                        type: integer
+                      totalPages:
+                        type: integer
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      summary: Create user (admin)
+      description: Create a new user (administrative). Protected endpoint.
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreate'
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/users/{id}:
+    get:
+      summary: Get user by ID
+      description: Retrieve a user by their ID. Protected endpoint.
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User object
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+
+    put:
+      summary: Update user by ID
+      description: Update user fields. Protected endpoint.
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdate'
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+
+    delete:
+      summary: Delete user by ID
+      description: Permanently delete a user. Protected endpoint.
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: User deleted
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/business:
+    post:
+      summary: Create a business
+      description: Create a new business entry. Protected endpoint.
+      tags: [Business]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessCreate'
+      responses:
+        "201":
+          description: Business created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Business'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+
+    get:
+      summary: List businesses
+      description: Return list of businesses (paginated optional).
+      tags: [Business]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: List of businesses
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Business'
+                  pagination:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      limit:
+                        type: integer
+                      total:
+                        type: integer
+
+  /api/v1/business/{id}:
+    get:
+      summary: Get business by ID
+      description: Retrieve a business resource by ID.
+      tags: [Business]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Business object
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Business'
+        "404":
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      summary: Update business by ID
+      description: Update business fields.
+      tags: [Business]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessUpdate'
+      responses:
+        "200":
+          description: Updated business
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Business'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "404":
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: Delete business by ID
+      description: Permanently delete a business.
+      tags: [Business]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Business deleted
+        "404":
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/team/invite:
+    post:
+      summary: Invite user by email
+      description: Creates a team invitation for the business given by X-Tenant-ID.
+      tags: [Team]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: header
+          name: X-Tenant-ID
+          required: true
+          schema:
+            type: string
+          description: Business ID (tenant) for the invitation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, role]
+              properties:
+                email:
+                  type: string
+                  format: email
+                role:
+                  type: integer
+      responses:
+        "201":
+          description: Invitation created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invite_token:
+                    type: string
+                  message:
+                    type: string
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/team/members:
+    get:
+      summary: List team members
+      tags: [Team]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: header
+          name: X-Tenant-ID
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Members list
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/team/members/{id}/role:
+    patch:
+      summary: Update member role
+      tags: [Team]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: header
+          name: X-Tenant-ID
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  type: integer
+      responses:
+        "200":
+          description: Role updated
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/team/members/{id}:
+    delete:
+      summary: Remove team member
+      tags: [Team]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: header
+          name: X-Tenant-ID
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Member removed
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/team/invites/{token}/revoke:
+    post:
+      summary: Revoke invitation
+      tags: [Team]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Invitation revoked
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    User:
+      type: object
+      required: [id, email, username, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        email:
+          type: string
+          format: email
+          example: "user@example.com"
+        username:
+          type: string
+          example: "johndoe"
+        firstName:
+          type: string
+          example: "John"
+        lastName:
+          type: string
+          example: "Doe"
+        phone:
+          type: string
+          example: "+1-202-555-0143"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2025-01-01T12:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    UserCreate:
+      type: object
+      required: [email, password, username]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+        username:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        phone:
+          type: string
+
+    UserUpdate:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        username:
+          type: string
+        profile_pic:
+          type: string
+          description: Cloudinary secure_url from direct upload. Use GET /upload-signature first, upload to Cloudinary, then pass the returned secure_url here.
+        firstName:
+          type: string
+        lastName:
+          type: string
+        phone:
+          type: string
+
+    Business:
+      type: object
+      required: [id, name, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "b550e8400-e29b-41d4-a716-446655440001"
+        name:
+          type: string
+          example: "Acme Corp"
+        logo:
+          type: string
+          format: uri
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    BusinessCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        logo:
+          type: string
+          format: uri
+        description:
+          type: string
+
+    BusinessUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        logo:
+          type: string
+          format: uri
+        description:
+          type: string
+
+    AuthResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          example: "eyJhbGci..."
+        refreshToken:
+          type: string
+          example: "dGhpcy1pcy1hLXJlZnJlc2gtdG9rZW4"
+        expiresIn:
+          type: integer
+          description: seconds until expiry
+          example: 3600
+
+    LoginRequest:
+      type: object
+      required: [password]
+      properties:
+        email:
+          type: string
+          format: email
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+
+    ValidationError:
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        statusCode:
+          type: integer
+
+    SuccessMessage:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+        message:
+          type: string
+
+    UploadSignature:
+      type: object
+      description: Pre-signed params for direct Cloudinary upload
+      properties:
+        upload_url:
+          type: string
+          description: Cloudinary upload endpoint
+        api_key:
+          type: string
+        signature:
+          type: string
+        timestamp:
+          type: string
+        folder:
+          type: string
+        public_id:
+          type: string
+        cloud_name:
+          type: string
+
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          example: healthy
+        database:
+          type: string
+          example: ok
+        redis:
+          type: string
+          example: ok
+        timestamp:
+          type: string
+          format: date-time
+
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          example: "user@example.com"
+
+    ResetPasswordRequest:
+      type: object
+      required: [token, password]
+      properties:
+        token:
+          type: string
+          description: Reset token from email
+        password:
+          type: string
+          format: password
+          minLength: 8
+          description: New password
+
+    MFASetupResponse:
+      type: object
+      properties:
+        secret:
+          type: string
+          description: Base32-encoded TOTP secret
+          example: "JBSWY3DPEHPK3PXP"
+        qr_uri:
+          type: string
+          description: otpauth:// URI for QR code generation
+          example: "otpauth://totp/AuthService:user@example.com?secret=JBSWY3DPEHPK3PXP&issuer=AuthService"
+
+    MFAVerifyRequest:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          pattern: "^[0-9]{6}$"
+          description: 6-digit TOTP code
+          example: "123456"
+
+    MFAEnableResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "MFA enabled successfully"
+        backup_codes:
+          type: array
+          items:
+            type: string
+          description: One-time backup codes (store securely)
+          example: ["abc123def456", "ghi789jkl012"]
+
+    MFALoginRequest:
+      type: object
+      required: [user_id, code]
+      properties:
+        user_id:
+          type: integer
+          format: int64
+          description: User ID from initial login response
+        code:
+          type: string
+          description: 6-digit TOTP code or backup code
+          example: "123456"
+
+    MFADisableRequest:
+      type: object
+      required: [password, code]
+      properties:
+        password:
+          type: string
+          format: password
+          description: Current account password
+        code:
+          type: string
+          description: 6-digit TOTP code
+          example: "123456"
+
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Session ID
+        user_id:
+          type: integer
+          format: int64
+        ip_address:
+          type: string
+          example: "192.168.1.1"
+        user_agent:
+          type: string
+          example: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)..."
+        device:
+          type: string
+          description: Parsed device info
+          example: "Chrome on Windows"
+        created_at:
+          type: string
+          format: date-time
+        last_active_at:
+          type: string
+          format: date-time
+        is_current:
+          type: boolean
+          description: True if this is the session making the request
+
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        business_id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+          nullable: true
+        action:
+          type: string
+          enum:
+            - LOGIN
+            - LOGOUT
+            - REGISTER
+            - PASSWORD_CHANGE
+            - PASSWORD_RESET_REQUEST
+            - PASSWORD_RESET_COMPLETE
+            - EMAIL_VERIFICATION_SENT
+            - EMAIL_VERIFIED
+            - MFA_ENABLED
+            - MFA_DISABLED
+            - MFA_BACKUP_USED
+            - SSO_LOGIN
+            - SSO_LINK
+            - SESSION_REVOKED
+            - PROFILE_UPDATE
+            - TEAM_INVITE
+            - TEAM_JOIN
+            - TEAM_LEAVE
+            - ROLE_CHANGE
+          example: "LOGIN"
+        ip_address:
+          type: string
+          example: "192.168.1.1"
+        user_agent:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Additional context about the action
+        created_at:
+          type: string
+          format: date-time
+
+  responses:
+    BadRequest:
+      description: Validation failed or bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+
+    Unauthorized:
+      description: Authentication required or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+tags:
+  - name: Auth
+    description: Authentication-related endpoints (register, login, profile, tokens, password reset, email verification)
+  - name: MFA
+    description: Multi-factor authentication (TOTP) setup, enable, verify, disable
+  - name: SSO
+    description: Single Sign-On endpoints (Google OAuth)
+  - name: Sessions
+    description: Session management (list, revoke active sessions)
+  - name: Audit
+    description: Audit log retrieval
+  - name: Health
+    description: Health check endpoints
+  - name: Users
+    description: User administration endpoints
+  - name: Business
+    description: Business resource endpoints
+  - name: Team
+    description: Team member and invitation management

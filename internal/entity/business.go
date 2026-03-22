@@ -9,14 +9,18 @@ const (
 )
 
 type Business struct {
-	ID           int64     `json:"id"`
-	Name         string    `json:"name" validate:"required,min=2,max=100"`
-	Slug         string    `json:"slug" validate:"required,min=2,max=50"`
-	Email        string    `json:"email" validate:"required,email"`
-	OwnerID      int64     `json:"owner_id"`
-	SignupPolicy string    `json:"signup_policy"`
-	CreatedAt    time.Time `json:"created_at,omitempty"`
-	UpdatedAt    time.Time `json:"updated_at,omitempty"`
+	ID           int64      `json:"id"`
+	Name         string     `json:"name" validate:"required,min=2,max=100"`
+	Slug         string     `json:"slug" validate:"required,min=2,max=50"`
+	Email        string     `json:"email" validate:"required,email"`
+	OwnerID      int64      `json:"owner_id"`
+	PublicKey    string     `json:"public_key,omitempty"`
+	Plan         string     `json:"plan,omitempty"`
+	CreatedByID  int64      `json:"created_by_id,omitempty"`
+	DeletedAt    *time.Time `json:"deleted_at,omitempty"`
+	SignupPolicy string     `json:"signup_policy"`
+	CreatedAt    time.Time  `json:"created_at,omitempty"`
+	UpdatedAt    time.Time  `json:"updated_at,omitempty"`
 }
 
 type BusinessUser struct {
@@ -48,12 +52,12 @@ type BusinessInvite struct {
 }
 
 type BusinessDomain struct {
-	ID                 int64      `json:"id"`
-	BusinessID         int64      `json:"business_id"`
-	Domain             string     `json:"domain"`
-	Verified           bool       `json:"verified"`
-	AutoJoinEnabled    bool       `json:"auto_join_enabled"`
-	VerificationToken  string     `json:"verification_token,omitempty"`
-	VerifiedAt         *time.Time `json:"verified_at,omitempty"`
-	CreatedAt          time.Time  `json:"created_at,omitempty"`
+	ID                int64      `json:"id"`
+	BusinessID        int64      `json:"business_id"`
+	Domain            string     `json:"domain"`
+	Verified          bool       `json:"verified"`
+	AutoJoinEnabled   bool       `json:"auto_join_enabled"`
+	VerificationToken string     `json:"verification_token,omitempty"`
+	VerifiedAt        *time.Time `json:"verified_at,omitempty"`
+	CreatedAt         time.Time  `json:"created_at,omitempty"`
 }

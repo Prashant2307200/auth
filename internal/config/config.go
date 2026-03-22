@@ -2,22 +2,26 @@ package config
 
 import (
 	"flag"
-	"log"
 	"os"
+	"strings"
+	"log/slog"
 
 	"github.com/ilyakaznacheev/cleanenv"
 )
 
 type Secrets struct {
-	AccessTokenSecret  string `yaml:"access_token_secret" env:"ACCESS_TOKEN_SECRET" env-required:"true" env-default:"kRbZnaqqtfk7xHklLwPEf/bt+OsvxEFgoNNiPkyoD8C9+4pHRbiPS6vdv1nGzPR+I3L6Sy9u3c/iPLD7fQqR7g=="`
+	// Optional: access JWTs are signed with RSA (see jwt key paths). Kept for YAML compatibility / future use.
+	AccessTokenSecret string `yaml:"access_token_secret" env:"ACCESS_TOKEN_SECRET"`
+	// Required: used for refresh token signing (HS256).
 	RefreshTokenSecret string `yaml:"refresh_token_secret" env:"REFRESH_TOKEN_SECRET" env-required:"true"`
-	CookieSecret       string `yaml:"cookie_secret" env:"COOKIE_SECRET" env-required:"true"`
+	// Optional: reserved for signed/encrypted cookies; HttpOnly cookies are used without signing today.
+	CookieSecret string `yaml:"cookie_secret" env:"COOKIE_SECRET"`
 }
 
 type Cloud struct {
-	Name      string `yaml:"name" env:"NAME" env-required:"true" env-default:"dyrb0ytef"`
-	ApiKey    string `yaml:"api_key" env:"API_KEY" env-required:"true" env-default:"888923427284328"`
-	ApiSecret string `yaml:"api_secret" env:"API_SECRET" env-required:"true" env-default:"wDYpMIwf_og6dKfEgAfmqes1a9w"`
+	Name      string `yaml:"name" env:"NAME" env-required:"true"`
+	ApiKey    string `yaml:"api_key" env:"API_KEY" env-required:"true"`
+	ApiSecret string `yaml:"api_secret" env:"API_SECRET" env-required:"true"`
 }
 
 type HttpServer struct {
@@ -25,9 +29,22 @@ type HttpServer struct {
 }
 
 type Redis struct {
-	Addr string `yaml:"address" env:"REDIS_ADDRESS" env-required:"true" env-default:"localhost:6379"`
-	User string `yaml:"username" env:"REDIS_USERNAME" env-required:"true" env-default:""`
-	Pass string `yaml:"password" env:"REDIS_PASSWORD" env-required:"true" env-default:""`
+	Addr string `yaml:"address" env:"REDIS_ADDRESS" env-required:"true"`
+	User string `yaml:"username" env:"REDIS_USERNAME" env-required:"true"`
+	Pass string `yaml:"password" env:"REDIS_PASSWORD" env-required:"true"`
+}
+
+type Email struct {
+	APIKey    string `yaml:"api_key" env:"MAILEROO_API_KEY"`
+	FromEmail string `yaml:"from_email" env:"MAILEROO_FROM_EMAIL"`
+	FromName  string `yaml:"from_name" env:"MAILEROO_FROM_NAME"`
+	BaseURL   string `yaml:"base_url" env:"APP_BASE_URL"`
+}
+
+type OAuth struct {
+	GoogleClientID     string `yaml:"google_client_id" env:"GOOGLE_CLIENT_ID"`
+	GoogleClientSecret string `yaml:"google_client_secret" env:"GOOGLE_CLIENT_SECRET"`
+	GoogleRedirectURL  string `yaml:"google_redirect_url" env:"GOOGLE_REDIRECT_URL"`
 }
 
 type Config struct {
@@ -36,7 +53,14 @@ type Config struct {
 	HttpServer  HttpServer `yaml:"http_server"`
 	Cloud       Cloud      `yaml:"cloud"`
 	Redis       Redis      `yaml:"redis"`
-	PostgresUri string     `yaml:"postgres_uri" env:"POSTGRES_URI" env-required:"true" env-default:"postgresql://auth_db_521h_user:O1Si4boEobcNGqzp5R0AjAt5mDBXeTeX@dpg-d1sf2f8dl3ps73a7su1g-a.singapore-postgres.render.com/auth_db_521h"`
+	Email       Email      `yaml:"email"`
+	OAuth       OAuth      `yaml:"oauth"`
+	PostgresUri string     `yaml:"postgres_uri" env:"POSTGRES_URI" env-required:"true"`
+	// Optional JWT key paths; if empty, code may fall back to legacy defaults.
+	JWT struct {
+		PublicKeyPath  string `yaml:"public_key_path" env:"JWT_PUBLIC_KEY_PATH"`
+		PrivateKeyPath string `yaml:"private_key_path" env:"JWT_PRIVATE_KEY_PATH"`
+	} `yaml:"jwt"`
 }
 
 func MustLoad() *Config {
@@ -51,20 +75,48 @@ func MustLoad() *Config {
 		configPath = *flags
 
 		if configPath == "" {
-			log.Fatal("Config path is not set")
+			slog.Error("Config path is not set")
+			os.Exit(1)
 		}
 	}
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		log.Fatalf("Config file does not exist: %s", configPath)
+		slog.Error("Config file does not exist", slog.String("path", configPath))
+		os.Exit(1)
 	}
 
 	var cfg Config
 
 	err := cleanenv.ReadConfig(configPath, &cfg)
 	if err != nil {
-		log.Fatalf("Cannot read config: %s", err.Error())
+		slog.Error("Cannot read config", slog.Any("error", err))
+		os.Exit(1)
+	}
+
+	missing := missingRequiredEnvVars([]string{
+		"POSTGRES_URI",
+		"REDIS_ADDRESS",
+		"REDIS_USERNAME",
+		"REDIS_PASSWORD",
+		"REFRESH_TOKEN_SECRET",
+		"NAME",
+		"API_KEY",
+		"API_SECRET",
+	})
+	if len(missing) > 0 {
+		slog.Error("Missing required environment variables", slog.String("missing", strings.Join(missing, ", ")))
+		os.Exit(1)
 	}
 
 	return &cfg
+}
+
+func missingRequiredEnvVars(vars []string) []string {
+	missing := make([]string, 0)
+	for _, v := range vars {
+		if _, ok := os.LookupEnv(v); !ok {
+			missing = append(missing, v)
+		}
+	}
+	return missing
 }

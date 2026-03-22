@@ -2,10 +2,16 @@ package testutil
 
 import (
 	"context"
-	"mime/multipart"
+	"errors"
 
 	"github.com/Prashant2307200/auth-service/internal/entity"
+	"github.com/Prashant2307200/auth-service/internal/usecase/interfaces"
 	"github.com/stretchr/testify/mock"
+)
+
+var (
+	ErrNotFound     = errors.New("not found")
+	ErrCannotRevoke = errors.New("cannot revoke invitation")
 )
 
 // MockUserRepo is a mock implementation of UserRepo interface
@@ -42,6 +48,11 @@ func (m *MockUserRepo) UpdateById(ctx context.Context, id int64, user *entity.Us
 	return args.Error(0)
 }
 
+func (m *MockUserRepo) UpdatePassword(ctx context.Context, id int64, hashedPassword string) error {
+	args := m.Called(ctx, id, hashedPassword)
+	return args.Error(0)
+}
+
 func (m *MockUserRepo) DeleteById(ctx context.Context, id int64) error {
 	args := m.Called(ctx, id)
 	return args.Error(0)
@@ -58,6 +69,24 @@ func (m *MockUserRepo) Search(ctx context.Context, currentID int64, search strin
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]*entity.User), args.Error(1)
+}
+
+func (m *MockUserRepo) GetByGoogleID(ctx context.Context, googleID string) (*entity.User, error) {
+	args := m.Called(ctx, googleID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*entity.User), args.Error(1)
+}
+
+func (m *MockUserRepo) MarkEmailVerified(ctx context.Context, id int64) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+func (m *MockUserRepo) LinkGoogleID(ctx context.Context, id int64, googleID string) error {
+	args := m.Called(ctx, id, googleID)
+	return args.Error(0)
 }
 
 // MockTokenService is a mock implementation of TokenService interface
@@ -94,6 +123,11 @@ func (m *MockTokenService) VerifyRefreshToken(ctx context.Context, tokenStr stri
 	return args.String(0), args.Error(1)
 }
 
+func (m *MockTokenService) VerifyToken(ctx context.Context, tokenStr string) (int64, error) {
+	args := m.Called(ctx, tokenStr)
+	return args.Get(0).(int64), args.Error(1)
+}
+
 func (m *MockTokenService) GetRefreshToken(ctx context.Context, userID int64) (string, error) {
 	args := m.Called(ctx, userID)
 	return args.String(0), args.Error(1)
@@ -112,9 +146,12 @@ type MockCloudService struct {
 	mock.Mock
 }
 
-func (m *MockCloudService) UploadImage(ctx context.Context, file multipart.File, fileHeader *multipart.FileHeader) (string, error) {
-	args := m.Called(ctx, file, fileHeader)
-	return args.String(0), args.Error(1)
+func (m *MockCloudService) GenerateUploadSignature(ctx context.Context, userID int64) (*interfaces.UploadSignature, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*interfaces.UploadSignature), args.Error(1)
 }
 
 // MockBusinessRepo is a mock implementation of BusinessRepo interface
@@ -122,8 +159,107 @@ type MockBusinessRepo struct {
 	mock.Mock
 }
 
+// MockMemberRepo is a mock for member repository
+type MockMemberRepo struct{ mock.Mock }
+
+func (m *MockMemberRepo) Create(ctx context.Context, member *entity.BusinessMember) error {
+	args := m.Called(ctx, member)
+	return args.Error(0)
+}
+func (m *MockMemberRepo) GetByID(ctx context.Context, id int64) (*entity.BusinessMember, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*entity.BusinessMember), args.Error(1)
+}
+func (m *MockMemberRepo) GetByUserAndBusiness(ctx context.Context, userID, businessID int64) (*entity.BusinessMember, error) {
+	args := m.Called(ctx, userID, businessID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*entity.BusinessMember), args.Error(1)
+}
+func (m *MockMemberRepo) ListByBusiness(ctx context.Context, businessID int64) ([]*entity.BusinessMember, error) {
+	args := m.Called(ctx, businessID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*entity.BusinessMember), args.Error(1)
+}
+func (m *MockMemberRepo) ListByUser(ctx context.Context, userID int64) ([]*entity.BusinessMember, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*entity.BusinessMember), args.Error(1)
+}
+func (m *MockMemberRepo) Update(ctx context.Context, member *entity.BusinessMember) error {
+	args := m.Called(ctx, member)
+	return args.Error(0)
+}
+func (m *MockMemberRepo) Delete(ctx context.Context, id int64) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+func (m *MockMemberRepo) GetByInviteToken(ctx context.Context, token string) (*entity.BusinessMember, error) {
+	args := m.Called(ctx, token)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*entity.BusinessMember), args.Error(1)
+}
+
+// MockAuditRepo is a mock for AuditRepository
+type MockAuditRepo struct{ mock.Mock }
+
+func (m *MockAuditRepo) Log(ctx context.Context, audit *entity.AuditLog) error {
+	args := m.Called(ctx, audit)
+	return args.Error(0)
+}
+func (m *MockAuditRepo) GetByID(ctx context.Context, id int64) (*entity.AuditLog, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*entity.AuditLog), args.Error(1)
+}
+func (m *MockAuditRepo) ListByBusiness(ctx context.Context, businessID int64, limit, offset int) ([]*entity.AuditLog, error) {
+	args := m.Called(ctx, businessID, limit, offset)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*entity.AuditLog), args.Error(1)
+}
+func (m *MockAuditRepo) ListByUser(ctx context.Context, businessID, userID int64, limit, offset int) ([]*entity.AuditLog, error) {
+	args := m.Called(ctx, businessID, userID, limit, offset)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*entity.AuditLog), args.Error(1)
+}
+func (m *MockAuditRepo) ListWithFilter(ctx context.Context, businessID int64, userID *int64, action, fromTime, toTime string, limit, offset int) ([]*entity.AuditLog, error) {
+	args := m.Called(ctx, businessID, userID, action, fromTime, toTime, limit, offset)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*entity.AuditLog), args.Error(1)
+}
+func (m *MockAuditRepo) Export(ctx context.Context, businessID int64) ([]*entity.AuditLog, error) {
+	args := m.Called(ctx, businessID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*entity.AuditLog), args.Error(1)
+}
+
 func (m *MockBusinessRepo) Create(ctx context.Context, business *entity.Business) (int64, error) {
 	args := m.Called(ctx, business)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+func (m *MockBusinessRepo) CreateWithOwner(ctx context.Context, business *entity.Business, ownerID int64) (int64, error) {
+	args := m.Called(ctx, business, ownerID)
 	return args.Get(0).(int64), args.Error(1)
 }
 
@@ -279,3 +415,72 @@ func (m *MockBusinessRepo) UpdateDomainAutoJoin(ctx context.Context, domainID in
 	args := m.Called(ctx, domainID, businessID, enabled)
 	return args.Error(0)
 }
+
+type MockEmailService struct {
+	mock.Mock
+}
+
+func (m *MockEmailService) SendInvite(ctx context.Context, to string, token string) error {
+	args := m.Called(ctx, to, token)
+	return args.Error(0)
+}
+
+func (m *MockEmailService) SendPasswordReset(ctx context.Context, to string, token string) error {
+	args := m.Called(ctx, to, token)
+	return args.Error(0)
+}
+
+func (m *MockEmailService) SendEmailVerification(ctx context.Context, to string, token string) error {
+	args := m.Called(ctx, to, token)
+	return args.Error(0)
+}
+
+type MockTeamUsecase struct {
+	mock.Mock
+}
+
+func (m *MockTeamUsecase) InviteUser(ctx context.Context, businessID int64, email string, role int) (string, error) {
+	args := m.Called(ctx, businessID, email, role)
+	return args.Get(0).(string), args.Error(1)
+}
+
+func (m *MockTeamUsecase) AcceptInvitation(ctx context.Context, inviteToken string) error {
+	args := m.Called(ctx, inviteToken)
+	return args.Error(0)
+}
+
+func (m *MockTeamUsecase) RevokeInvitation(ctx context.Context, inviteToken string) error {
+	args := m.Called(ctx, inviteToken)
+	return args.Error(0)
+}
+
+func (m *MockTeamUsecase) ListMembers(ctx context.Context, businessID int64) ([]*entity.BusinessMember, error) {
+	args := m.Called(ctx, businessID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*entity.BusinessMember), args.Error(1)
+}
+
+func (m *MockTeamUsecase) RemoveMember(ctx context.Context, businessID int64, memberID int64) error {
+	args := m.Called(ctx, businessID, memberID)
+	return args.Error(0)
+}
+
+func (m *MockTeamUsecase) UpdateMemberRole(ctx context.Context, businessID int64, memberID int64, newRole int) error {
+	args := m.Called(ctx, businessID, memberID, newRole)
+	return args.Error(0)
+}
+
+// Validation helpers to satisfy the TeamUsecase interface
+func (m *MockTeamUsecase) ValidateInviteEmail(email string) error {
+	args := m.Called(email)
+	return args.Error(0)
+}
+
+func (m *MockTeamUsecase) ValidateRole(role int) error {
+	args := m.Called(role)
+	return args.Error(0)
+}
+
+// (duplicate methods removed)

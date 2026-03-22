@@ -23,6 +23,15 @@ func RunMigrations(db *sql.DB) error {
 	if err := MigrateBusinessDomainsTable(db); err != nil {
 		return err
 	}
+	if err := MigratePasswordResetTokensTable(db); err != nil {
+		return err
+	}
+	if err := MigrateEmailVerificationTable(db); err != nil {
+		return err
+	}
+	if err := MigrateUserMFATable(db); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -179,5 +188,100 @@ func MigrateBusinessDomainsTable(db *sql.DB) error {
 		}
 	}
 	slog.Info("Business_domains table migration completed successfully")
+	return nil
+}
+
+// MigratePasswordResetTokensTable creates the password_reset_tokens table if it doesn't exist
+func MigratePasswordResetTokensTable(db *sql.DB) error {
+	createTableQuery := `
+	CREATE TABLE IF NOT EXISTS password_reset_tokens (
+		id BIGSERIAL PRIMARY KEY,
+		user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		token_hash VARCHAR(64) NOT NULL,
+		expires_at TIMESTAMPTZ NOT NULL,
+		used_at TIMESTAMPTZ,
+		created_at TIMESTAMPTZ DEFAULT NOW()
+	);
+	`
+	if _, err := db.Exec(createTableQuery); err != nil {
+		return fmt.Errorf("failed to create password_reset_tokens table: %w", err)
+	}
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_hash ON password_reset_tokens(token_hash);",
+		"CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id ON password_reset_tokens(user_id);",
+	}
+	for _, idx := range indexes {
+		if _, err := db.Exec(idx); err != nil {
+			slog.Warn("Failed to create index", slog.String("index", idx), slog.Any("error", err))
+		}
+	}
+	slog.Info("Password_reset_tokens table migration completed successfully")
+	return nil
+}
+
+// MigrateEmailVerificationTable creates the email_verification_tokens table and updates users table
+func MigrateEmailVerificationTable(db *sql.DB) error {
+	alterUserQueries := []string{
+		"ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE;",
+		"ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ;",
+		"ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255);",
+	}
+	for _, q := range alterUserQueries {
+		if _, err := db.Exec(q); err != nil {
+			slog.Warn("Failed to alter users table", slog.String("query", q), slog.Any("error", err))
+		}
+	}
+
+	createTableQuery := `
+	CREATE TABLE IF NOT EXISTS email_verification_tokens (
+		id BIGSERIAL PRIMARY KEY,
+		user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		token_hash VARCHAR(64) NOT NULL,
+		expires_at TIMESTAMPTZ NOT NULL,
+		created_at TIMESTAMPTZ DEFAULT NOW()
+	);
+	`
+	if _, err := db.Exec(createTableQuery); err != nil {
+		return fmt.Errorf("failed to create email_verification_tokens table: %w", err)
+	}
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_hash ON email_verification_tokens(token_hash);",
+		"CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_user_id ON email_verification_tokens(user_id);",
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id) WHERE google_id IS NOT NULL;",
+	}
+	for _, idx := range indexes {
+		if _, err := db.Exec(idx); err != nil {
+			slog.Warn("Failed to create index", slog.String("index", idx), slog.Any("error", err))
+		}
+	}
+	slog.Info("Email_verification_tokens table migration completed successfully")
+	return nil
+}
+
+// MigrateUserMFATable creates the user_mfa table for TOTP/MFA
+func MigrateUserMFATable(db *sql.DB) error {
+	createTableQuery := `
+	CREATE TABLE IF NOT EXISTS user_mfa (
+		id BIGSERIAL PRIMARY KEY,
+		user_id BIGINT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+		secret_encrypted TEXT NOT NULL,
+		backup_codes_hash TEXT[],
+		enabled_at TIMESTAMPTZ,
+		last_used_at TIMESTAMPTZ,
+		created_at TIMESTAMPTZ DEFAULT NOW()
+	);
+	`
+	if _, err := db.Exec(createTableQuery); err != nil {
+		return fmt.Errorf("failed to create user_mfa table: %w", err)
+	}
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_user_mfa_user_id ON user_mfa(user_id);",
+	}
+	for _, idx := range indexes {
+		if _, err := db.Exec(idx); err != nil {
+			slog.Warn("Failed to create index", slog.String("index", idx), slog.Any("error", err))
+		}
+	}
+	slog.Info("User_mfa table migration completed successfully")
 	return nil
 }

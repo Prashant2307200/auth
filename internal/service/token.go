@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel"
 )
 
 type JWTTokenService struct {
@@ -17,6 +19,31 @@ type JWTTokenService struct {
 	AccessSecret       *rsa.PrivateKey
 	RefreshSecret      string
 	Rdb                *redis.Client
+	publicKeyPEM       []byte
+	metrics            *TokenMetrics
+}
+
+type TokenMetrics struct {
+	VerificationsTotal   prometheus.Counter
+	VerificationDuration prometheus.Histogram
+}
+
+func NewTokenMetrics() (*TokenMetrics, error) {
+	verifTotal := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "auth_token_verifications_total",
+		Help: "Total number of token verification attempts",
+	})
+
+	verifDuration := prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "auth_token_verification_duration_seconds",
+		Help:    "Token verification duration in seconds",
+		Buckets: prometheus.DefBuckets,
+	})
+
+	return &TokenMetrics{
+		VerificationsTotal:   verifTotal,
+		VerificationDuration: verifDuration,
+	}, nil
 }
 
 func NewJWTTokenService(rdb *redis.Client, publicAccessSecretPath, accessSecretPath, refreshSecret string) (*JWTTokenService, error) {
@@ -40,11 +67,15 @@ func NewJWTTokenService(rdb *redis.Client, publicAccessSecretPath, accessSecretP
 		return nil, fmt.Errorf("failed to parse RSA public key from %s: %w", publicAccessSecretPath, err)
 	}
 
+	metrics, _ := NewTokenMetrics()
+
 	return &JWTTokenService{
 		PublicAccessSecret: publicAccessSecret,
 		AccessSecret:       accessSecret,
 		RefreshSecret:      refreshSecret,
 		Rdb:                rdb,
+		publicKeyPEM:       publicAccessSecretBytes,
+		metrics:            metrics,
 	}, nil
 }
 
@@ -73,14 +104,22 @@ func generateJWT(userID string, secret string, ttl time.Duration) (string, error
 }
 
 func (s *JWTTokenService) VerifyRefreshToken(ctx context.Context, tokenStr string) (string, error) {
-
 	claims := jwt.MapClaims{}
 
-	_, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (any, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
 		return []byte(s.RefreshSecret), nil
 	})
-	if err != nil && !errors.Is(err, jwt.ErrTokenExpired) {
+	if err != nil {
+		if errors.Is(err, jwt.ErrTokenExpired) {
+			return "", jwt.ErrTokenExpired
+		}
 		return "", fmt.Errorf("token invalid: %w", err)
+	}
+	if !token.Valid {
+		return "", errors.New("token is not valid")
 	}
 
 	userID, ok := claims["userId"].(string)
@@ -104,37 +143,60 @@ func (s *JWTTokenService) GenerateAccessToken(userID int64, businessID ...int64)
 }
 
 func (s *JWTTokenService) VerifyToken(ctx context.Context, tokenStr string) (int64, error) {
-	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+	tracer := otel.Tracer("auth-service")
+	ctx, span := tracer.Start(ctx, "token.VerifyToken")
+	defer span.End()
+
+	start := time.Now()
+	defer func() {
+		if s.metrics != nil {
+			s.metrics.VerificationDuration.Observe(time.Since(start).Seconds())
+		}
+	}()
+
+	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return s.PublicAccessSecret, nil
 	})
 	if err != nil {
+		if s.metrics != nil {
+			s.metrics.VerificationsTotal.Inc()
+		}
 		return 0, fmt.Errorf("failed to parse token: %w", err)
 	}
 
 	if !token.Valid {
+		if s.metrics != nil {
+			s.metrics.VerificationsTotal.Inc()
+		}
 		return 0, errors.New("token is not valid")
 	}
 
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
+		if s.metrics != nil {
+			s.metrics.VerificationsTotal.Inc()
+		}
 		return 0, errors.New("failed to extract claims from token")
 	}
 
 	userIDFloat, ok := claims["userId"].(float64)
 	if !ok {
+		if s.metrics != nil {
+			s.metrics.VerificationsTotal.Inc()
+		}
 		return 0, fmt.Errorf("userId claim not found or invalid type in token")
+	}
+
+	if s.metrics != nil {
+		s.metrics.VerificationsTotal.Inc()
 	}
 
 	return int64(userIDFloat), nil
 }
 
 func (s *JWTTokenService) GetPublicKeyPEM() ([]byte, error) {
-	data, err := os.ReadFile("keys/public.pem")
-	if err != nil {
-		return nil, fmt.Errorf("failed to read public key file: %w", err)
-	}
-	return data, nil
+	return s.publicKeyPEM, nil
 }

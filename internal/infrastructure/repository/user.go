@@ -26,7 +26,7 @@ func NewUserRepo(database *sql.DB) (interfaces.UserRepo, error) {
 func (r *UserRepo) Search(ctx context.Context, currentID int64, search string) ([]*entity.User, error) {
 	// Sanitize search input to prevent SQL injection
 	sanitizedSearch := db.SanitizeSearchInput(search, 100)
-	
+
 	// Use parameterized query with proper escaping
 	query := `
 		SELECT id, username, email, profile_pic
@@ -36,7 +36,7 @@ func (r *UserRepo) Search(ctx context.Context, currentID int64, search string) (
 		ORDER BY username
 		LIMIT 20
 	`
-	
+
 	// Build search pattern with proper escaping
 	searchPattern := "%" + sanitizedSearch + "%"
 
@@ -61,7 +61,6 @@ func (r *UserRepo) Search(ctx context.Context, currentID int64, search string) (
 
 	return users, nil
 }
-
 
 func (r *UserRepo) List(ctx context.Context) ([]*entity.User, error) {
 	// Only select necessary fields - avoid SELECT * for performance
@@ -174,7 +173,7 @@ func (r *UserRepo) UpdateById(ctx context.Context, id int64, user *entity.User) 
 		SET username = $1, email = $2, password = $3, profile_pic = $4, role = $5, updated_at = CURRENT_TIMESTAMP
 		WHERE id = $6
 	`
-	
+
 	res, err := db.Exec(ctx, r.Db, query, user.Username, user.Email, user.Password, user.ProfilePic, user.Role, id)
 	if err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
@@ -190,14 +189,36 @@ func (r *UserRepo) UpdateById(ctx context.Context, id int64, user *entity.User) 
 	return nil
 }
 
+// UpdatePassword updates only the stored password hash for a user
+func (r *UserRepo) UpdatePassword(ctx context.Context, id int64, hashedPassword string) error {
+	if hashedPassword == "" {
+		return fmt.Errorf("hashed password cannot be empty")
+	}
+	query := `UPDATE users SET password = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`
+	res, err := db.Exec(ctx, r.Db, query, hashedPassword, id)
+	if err != nil {
+		return fmt.Errorf("failed to update password: %w", err)
+	}
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return db.HandleNotFoundError(sql.ErrNoRows, "user", id)
+	}
+	return nil
+}
+
+// duplicate removed - single UpdatePassword implementation remains above
+
 func (r *UserRepo) DeleteById(ctx context.Context, id int64) error {
 	query := "DELETE FROM users WHERE id = $1"
-	
+
 	res, err := db.Exec(ctx, r.Db, query, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete user: %w", err)
 	}
-	
+
 	rowsAffected, err := res.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("failed to get rows affected: %w", err)
@@ -230,4 +251,74 @@ func (r *UserRepo) Create(ctx context.Context, user *entity.User) (int64, error)
 	}
 
 	return id, nil
+}
+
+func (r *UserRepo) GetByGoogleID(ctx context.Context, googleID string) (*entity.User, error) {
+	if googleID == "" {
+		return nil, fmt.Errorf("google_id cannot be empty")
+	}
+
+	query := `
+		SELECT id, username, email, password, profile_pic, role, created_at, updated_at 
+		FROM users 
+		WHERE google_id = $1
+	`
+	var user entity.User
+	row, err := db.QueryRow(ctx, r.Db, query, googleID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query user: %w", err)
+	}
+
+	err = row.Scan(
+		&user.ID,
+		&user.Username,
+		&user.Email,
+		&user.Password,
+		&user.ProfilePic,
+		&user.Role,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, err
+		}
+		return nil, fmt.Errorf("failed to scan user: %w", err)
+	}
+	return &user, nil
+}
+
+func (r *UserRepo) MarkEmailVerified(ctx context.Context, id int64) error {
+	query := `UPDATE users SET email_verified = TRUE, email_verified_at = NOW(), updated_at = CURRENT_TIMESTAMP WHERE id = $1`
+	res, err := db.Exec(ctx, r.Db, query, id)
+	if err != nil {
+		return fmt.Errorf("failed to mark email verified: %w", err)
+	}
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return db.HandleNotFoundError(sql.ErrNoRows, "user", id)
+	}
+	return nil
+}
+
+func (r *UserRepo) LinkGoogleID(ctx context.Context, id int64, googleID string) error {
+	if googleID == "" {
+		return fmt.Errorf("google_id cannot be empty")
+	}
+	query := `UPDATE users SET google_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`
+	res, err := db.Exec(ctx, r.Db, query, googleID, id)
+	if err != nil {
+		return fmt.Errorf("failed to link google id: %w", err)
+	}
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return db.HandleNotFoundError(sql.ErrNoRows, "user", id)
+	}
+	return nil
 }

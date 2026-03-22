@@ -6,10 +6,12 @@ import (
 	"net/http"
 
 	"github.com/Prashant2307200/auth-service/internal/entity"
+	"github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/dto"
+	"github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/middleware"
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/utils/request"
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/utils/response"
 	"github.com/Prashant2307200/auth-service/internal/usecase"
-	"github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/middleware"
+	v "github.com/Prashant2307200/auth-service/pkg/validator"
 )
 
 type AuthHandler struct {
@@ -30,38 +32,40 @@ func (h *AuthHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /profile/", h.deleteProfile)
 	mux.HandleFunc("GET /refresh/", h.refresh)
 	mux.HandleFunc("GET /public-key", h.publicKey)
+	mux.HandleFunc("GET /upload-signature", h.uploadSignature)
 }
 
 func (h *AuthHandler) register(w http.ResponseWriter, r *http.Request) {
 
-	req, err := request.ParseJSON[entity.RegisterRequest](r)
+	reqDto, err := request.ParseJSON[dto.RegisterRequest](r)
 	if err != nil {
 		slog.Error("Error parsing JSON", slog.Any("error", err))
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
-		return
-	}
-
-	if err := response.ValidationError(req); err != nil {
-		slog.Error("Error validating JSON", slog.Any("error", err))
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 
 	user := &entity.User{
-		Username:   req.Username,
-		Email:      req.Email,
-		Password:   req.Password,
-		ProfilePic: req.ProfilePic,
-		Role:       req.Role,
+		Username:   reqDto.Username,
+		Email:      reqDto.Email,
+		Password:   reqDto.Password,
+		ProfilePic: reqDto.ProfilePic,
+		Role:       reqDto.Role,
 	}
 	opts := &usecase.RegisterOptions{
-		InviteToken:  req.InviteToken,
-		BusinessSlug: req.BusinessSlug,
+		InviteToken:  reqDto.InviteToken,
+		BusinessSlug: reqDto.BusinessSlug,
 	}
 	access_token, refresh_token, err := h.UC.RegisterUser(r.Context(), user, opts)
 	if err != nil {
+		// if validation errors, return 400 with structured errors
+		var ves responseErrors
+		if unwrapValidationErrors(err, &ves) {
+			response.WriteJson(w, http.StatusBadRequest, map[string]interface{}{"errors": ves})
+			return
+		}
 		slog.Error("Error registering user", slog.Any("error", err))
-		response.WriteJson(w, http.StatusInternalServerError, response.GeneralError(err))
+		status := response.ErrorToStatus(err)
+		response.WriteError(w, status, err)
 		return
 	}
 
@@ -69,27 +73,49 @@ func (h *AuthHandler) register(w http.ResponseWriter, r *http.Request) {
 	response.WriteSuccess(w, http.StatusOK, "user registered successfully", nil)
 }
 
+// responseErrors for sending validation errors to client
+type responseErrors []struct {
+	Field   string `json:"field"`
+	Message string `json:"message"`
+}
+
+// unwrapValidationErrors tries to extract validator.ValidationErrors from an error
+func unwrapValidationErrors(err error, out *responseErrors) bool {
+	var ves v.ValidationErrors
+	if errors.As(err, &ves) {
+		var res responseErrors
+		for _, e := range ves {
+			res = append(res, struct {
+				Field   string `json:"field"`
+				Message string `json:"message"`
+			}{Field: e.Field, Message: e.Message})
+		}
+		*out = res
+		return true
+	}
+	return false
+}
+
 func (h *AuthHandler) login(w http.ResponseWriter, r *http.Request) {
 
-	user, err := request.ParseJSON[entity.Login](r)
+	loginDto, err := request.ParseJSON[dto.LoginRequest](r)
 	if err != nil {
 		slog.Error("Error parsing JSON", slog.Any("error", err))
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 
-	err = response.ValidationError(user)
+	access_token, refresh_token, err := h.UC.LoginUser(r.Context(), loginDto.Email, loginDto.Password)
 	if err != nil {
-		slog.Error("Error validating JSON", slog.Any("error", err))
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
-		return
-	}
-
-	access_token, refresh_token, err := h.UC.LoginUser(r.Context(), user.Email, user.Password)
-	if err != nil {
-		slog.Error("Error logging in user", slog.String("email", user.Email), slog.Any("error", err))
+		// if validation errors, return 400 with structured errors
+		var ves responseErrors
+		if unwrapValidationErrors(err, &ves) {
+			response.WriteJson(w, http.StatusBadRequest, map[string]interface{}{"errors": ves})
+			return
+		}
+		slog.Error("Error logging in user", slog.String("email", loginDto.Email), slog.Any("error", err))
 		// Don't expose whether user exists or password is wrong for security
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("invalid email or password")))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("invalid email or password"))
 		return
 	}
 
@@ -102,14 +128,15 @@ func (h *AuthHandler) logout(w http.ResponseWriter, r *http.Request) {
 	id, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
 		slog.Error("Failed to get user ID from context", slog.Any("error", err))
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("authentication required")))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 
 	err = h.UC.LogoutUser(r.Context(), id)
 	if err != nil {
 		slog.Error("Failed to logout user", slog.Int64("user_id", id), slog.Any("error", err))
-		response.WriteJson(w, http.StatusInternalServerError, response.GeneralError(err))
+		status := response.ErrorToStatus(err)
+		response.WriteError(w, status, err)
 		return
 	}
 
@@ -121,14 +148,15 @@ func (h *AuthHandler) profile(w http.ResponseWriter, r *http.Request) {
 	id, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
 		slog.Error("Failed to get user ID from context", slog.Any("error", err))
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("authentication required")))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 
 	user, err := h.UC.GetAuthUserProfile(r.Context(), id)
 	if err != nil {
 		slog.Error("Error getting user profile", slog.Any("error", err))
-		response.WriteJson(w, http.StatusInternalServerError, response.GeneralError(err))
+		status := response.ErrorToStatus(err)
+		response.WriteError(w, status, err)
 		return
 	}
 
@@ -139,69 +167,110 @@ func (h *AuthHandler) updateProfile(w http.ResponseWriter, r *http.Request) {
 	id, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
 		slog.Error("Failed to get user ID from context", slog.Any("error", err))
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("authentication required")))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 
-	user, file, fileHeader, err := request.ParseMultipartForm[entity.User](r, 10<<20, "profile_pic")
+	req, err := request.ParseJSON[dto.ProfileUpdateRequest](r)
 	if err != nil {
-		slog.Error("Error parsing multipart form", slog.Any("error", err))
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		slog.Error("Error parsing JSON", slog.Any("error", err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
-	if file != nil {
-		defer file.Close()
-	}
 
-	if file != nil {
-		url, err := h.UC.CloudService.UploadImage(r.Context(), file, fileHeader)
-		if err != nil {
-			response.WriteJson(w, http.StatusInternalServerError, response.GeneralError(err))
-			return
-		}
-		user.ProfilePic = url
-	}
-
-	if err := response.ValidationError(user); err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+	existing, err := h.UC.GetAuthUserProfile(r.Context(), id)
+	if err != nil {
+		slog.Error("Error getting user profile", slog.Any("error", err))
+		status := response.ErrorToStatus(err)
+		response.WriteError(w, status, err)
 		return
 	}
+
+	user := mergeProfileUpdate(existing, req)
 
 	if err := h.UC.UpdateAuthUserProfile(r.Context(), id, user); err != nil {
-		response.WriteJson(w, http.StatusInternalServerError, response.GeneralError(err))
+		var ves responseErrors
+		if unwrapValidationErrors(err, &ves) {
+			response.WriteJson(w, http.StatusBadRequest, map[string]interface{}{"errors": ves})
+			return
+		}
+		status := response.ErrorToStatus(err)
+		response.WriteError(w, status, err)
 		return
 	}
 
 	response.WriteSuccess(w, http.StatusOK, "user profile updated successfully", nil)
 }
 
+func mergeProfileUpdate(existing *entity.User, req *dto.ProfileUpdateRequest) *entity.User {
+	u := &entity.User{
+		ID:         existing.ID,
+		Username:   existing.Username,
+		Email:      existing.Email,
+		Password:   existing.Password,
+		ProfilePic: existing.ProfilePic,
+		Role:       existing.Role,
+		CreatedAt:  existing.CreatedAt,
+	}
+	if req.Username != "" {
+		u.Username = req.Username
+	}
+	if req.Email != "" {
+		u.Email = req.Email
+	}
+	if req.ProfilePic != "" {
+		u.ProfilePic = req.ProfilePic
+	}
+	return u
+}
+
+func (h *AuthHandler) uploadSignature(w http.ResponseWriter, r *http.Request) {
+	id, err := middleware.GetUserIDFromContext(r.Context())
+	if err != nil {
+		slog.Error("Failed to get user ID from context", slog.Any("error", err))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
+		return
+	}
+
+	sig, err := h.UC.GenerateUploadSignature(r.Context(), id)
+	if err != nil {
+		slog.Error("Error generating upload signature", slog.Any("error", err))
+		status := response.ErrorToStatus(err)
+		response.WriteError(w, status, err)
+		return
+	}
+
+	response.WriteJson(w, http.StatusOK, sig)
+}
+
 func (h *AuthHandler) deleteProfile(w http.ResponseWriter, r *http.Request) {
 	id, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
 		slog.Error("Failed to get user ID from context", slog.Any("error", err))
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("authentication required")))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 
-	if err := h.UC.UserRepo.DeleteById(r.Context(), id); err != nil {
-		response.WriteJson(w, http.StatusInternalServerError, response.GeneralError(err))
+	if err := h.UC.DeleteAuthUser(r.Context(), id); err != nil {
+		status := response.ErrorToStatus(err)
+		response.WriteError(w, status, err)
 		return
 	}
 
-	response.WriteSuccess(w, http.StatusOK, "user profile deleted successfully", nil)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *AuthHandler) refresh(w http.ResponseWriter, r *http.Request) {
 
 	refreshCookie, err := r.Cookie("refresh_token")
 	if err != nil {
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("refresh token not found")))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("refresh token not found"))
 		return
 	}
 
 	refresh, access, err := h.UC.RefreshSession(r.Context(), refreshCookie.Value)
 	if err != nil {
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(err))
+		response.WriteError(w, http.StatusUnauthorized, err)
 		return
 	}
 
@@ -214,7 +283,8 @@ func (h *AuthHandler) publicKey(w http.ResponseWriter, r *http.Request) {
 	pubKey, err := h.UC.GetPublicKey()
 	if err != nil {
 		slog.Error("Error getting public key", slog.Any("error", err))
-		response.WriteJson(w, http.StatusInternalServerError, response.GeneralError(err))
+		status := response.ErrorToStatus(err)
+		response.WriteError(w, status, err)
 		return
 	}
 

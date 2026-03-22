@@ -21,11 +21,8 @@ func TestUserUseCase_GetUsers(t *testing.T) {
 		{
 			name: "successful get users",
 			setupMocks: func(userRepo *testutil.MockUserRepo) {
-				users := []*entity.User{
-					testutil.CreateTestUserWithID(1),
-					testutil.CreateTestUserWithID(2),
-				}
-				userRepo.On("List", mock.Anything).Return(users, nil)
+				userRepo.On("GetById", mock.Anything, int64(99)).Return(testutil.CreateTestAdminWithID(99), nil)
+				userRepo.On("List", mock.Anything).Return(testutil.CreateTestUserList(1, 2), nil)
 			},
 			wantErr:   false,
 			wantCount: 2,
@@ -33,6 +30,7 @@ func TestUserUseCase_GetUsers(t *testing.T) {
 		{
 			name: "empty list",
 			setupMocks: func(userRepo *testutil.MockUserRepo) {
+				userRepo.On("GetById", mock.Anything, int64(99)).Return(testutil.CreateTestAdminWithID(99), nil)
 				userRepo.On("List", mock.Anything).Return([]*entity.User{}, nil)
 			},
 			wantErr:   false,
@@ -41,19 +39,28 @@ func TestUserUseCase_GetUsers(t *testing.T) {
 		{
 			name: "database error",
 			setupMocks: func(userRepo *testutil.MockUserRepo) {
+				userRepo.On("GetById", mock.Anything, int64(99)).Return(testutil.CreateTestAdminWithID(99), nil)
 				userRepo.On("List", mock.Anything).Return(nil, errors.New("database error"))
+			},
+			wantErr: true,
+		},
+		{
+			name: "forbidden when not admin",
+			setupMocks: func(userRepo *testutil.MockUserRepo) {
+				userRepo.On("GetById", mock.Anything, int64(99)).Return(testutil.CreateTestUserWithID(99), nil)
 			},
 			wantErr: true,
 		},
 	}
 
+	const adminID int64 = 99
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			userRepo := new(testutil.MockUserRepo)
 			tt.setupMocks(userRepo)
 
 			uc := NewUserUseCase(userRepo)
-			users, err := uc.GetUsers(context.Background())
+			users, err := uc.GetUsers(context.Background(), adminID)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -78,7 +85,7 @@ func TestUserUseCase_GetUserById(t *testing.T) {
 		wantUserID int64
 	}{
 		{
-			name:   "successful get user",
+			name:   "successful get user (self)",
 			userID: 1,
 			setupMocks: func(userRepo *testutil.MockUserRepo) {
 				user := testutil.CreateTestUserWithID(1)
@@ -103,7 +110,7 @@ func TestUserUseCase_GetUserById(t *testing.T) {
 			tt.setupMocks(userRepo)
 
 			uc := NewUserUseCase(userRepo)
-			user, err := uc.GetUserById(context.Background(), tt.userID)
+			user, err := uc.GetUserById(context.Background(), tt.userID, tt.userID)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -130,6 +137,7 @@ func TestUserUseCase_CreateUser(t *testing.T) {
 			name: "successful create",
 			user: testutil.CreateTestUser(),
 			setupMocks: func(userRepo *testutil.MockUserRepo) {
+				userRepo.On("GetById", mock.Anything, int64(99)).Return(testutil.CreateTestAdminWithID(99), nil)
 				userRepo.On("Create", mock.Anything, mock.AnythingOfType("*entity.User")).Return(int64(1), nil)
 			},
 			wantErr: false,
@@ -138,6 +146,7 @@ func TestUserUseCase_CreateUser(t *testing.T) {
 			name: "create failed",
 			user: testutil.CreateTestUser(),
 			setupMocks: func(userRepo *testutil.MockUserRepo) {
+				userRepo.On("GetById", mock.Anything, int64(99)).Return(testutil.CreateTestAdminWithID(99), nil)
 				userRepo.On("Create", mock.Anything, mock.AnythingOfType("*entity.User")).Return(int64(0), errors.New("create error"))
 			},
 			wantErr: true,
@@ -150,7 +159,7 @@ func TestUserUseCase_CreateUser(t *testing.T) {
 			tt.setupMocks(userRepo)
 
 			uc := NewUserUseCase(userRepo)
-			err := uc.CreateUser(context.Background(), tt.user)
+			err := uc.CreateUser(context.Background(), 99, tt.user)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -197,7 +206,7 @@ func TestUserUseCase_UpdateUserById(t *testing.T) {
 			tt.setupMocks(userRepo)
 
 			uc := NewUserUseCase(userRepo)
-			err := uc.UpdateUserById(context.Background(), tt.userID, tt.user)
+			err := uc.UpdateUserById(context.Background(), tt.userID, tt.userID, tt.user)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -241,7 +250,7 @@ func TestUserUseCase_DeleteUserById(t *testing.T) {
 			tt.setupMocks(userRepo)
 
 			uc := NewUserUseCase(userRepo)
-			err := uc.DeleteUserById(context.Background(), tt.userID)
+			err := uc.DeleteUserById(context.Background(), tt.userID, tt.userID)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -256,22 +265,19 @@ func TestUserUseCase_DeleteUserById(t *testing.T) {
 
 func TestUserUseCase_SearchUsers(t *testing.T) {
 	tests := []struct {
-		name         string
+		name          string
 		currentUserID int64
-		search       string
-		setupMocks   func(*testutil.MockUserRepo)
-		wantErr      bool
-		wantCount    int
+		search        string
+		setupMocks    func(*testutil.MockUserRepo)
+		wantErr       bool
+		wantCount     int
 	}{
 		{
 			name:          "successful search",
 			currentUserID: 1,
 			search:        "test",
 			setupMocks: func(userRepo *testutil.MockUserRepo) {
-				users := []*entity.User{
-					testutil.CreateTestUserWithID(2),
-				}
-				userRepo.On("Search", mock.Anything, int64(1), "test").Return(users, nil)
+				userRepo.On("Search", mock.Anything, int64(1), "test").Return(testutil.CreateTestUserList(2), nil)
 			},
 			wantErr:   false,
 			wantCount: 1,

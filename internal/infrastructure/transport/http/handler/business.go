@@ -63,23 +63,23 @@ func (h *BusinessHandler) RegisterRoutes(mux *http.ServeMux) {
 func (h *BusinessHandler) create(w http.ResponseWriter, r *http.Request) {
 	userID, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("authentication required")))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 
 	business, err := request.ParseJSON[entity.Business](r)
 	if err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 	if err := response.ValidationError(business); err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 
 	createdBusiness, err := h.UC.CreateBusiness(r.Context(), userID, business)
 	if err != nil {
-		response.WriteJson(w, http.StatusInternalServerError, response.GeneralError(err))
+		response.WriteDomainError(w, err)
 		return
 	}
 
@@ -89,13 +89,13 @@ func (h *BusinessHandler) create(w http.ResponseWriter, r *http.Request) {
 func (h *BusinessHandler) getByID(w http.ResponseWriter, r *http.Request) {
 	id, err := request.ParseId(r)
 	if err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 
 	business, err := h.UC.GetBusinessByID(r.Context(), id)
 	if err != nil {
-		response.WriteJson(w, http.StatusNotFound, response.GeneralError(err))
+		response.WriteError(w, http.StatusNotFound, err)
 		return
 	}
 
@@ -105,28 +105,28 @@ func (h *BusinessHandler) getByID(w http.ResponseWriter, r *http.Request) {
 func (h *BusinessHandler) update(w http.ResponseWriter, r *http.Request) {
 	userID, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("authentication required")))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 
 	id, err := request.ParseId(r)
 	if err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 
 	business, err := request.ParseJSON[entity.Business](r)
 	if err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 	if err := response.ValidationError(business); err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 
 	if err := h.UC.UpdateBusiness(r.Context(), userID, id, business); err != nil {
-		response.WriteJson(w, http.StatusForbidden, response.GeneralError(err))
+		response.WriteError(w, http.StatusForbidden, err)
 		return
 	}
 
@@ -136,18 +136,18 @@ func (h *BusinessHandler) update(w http.ResponseWriter, r *http.Request) {
 func (h *BusinessHandler) delete(w http.ResponseWriter, r *http.Request) {
 	userID, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("authentication required")))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 
 	id, err := request.ParseId(r)
 	if err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 
 	if err := h.UC.DeleteBusiness(r.Context(), userID, id); err != nil {
-		response.WriteJson(w, http.StatusForbidden, response.GeneralError(err))
+		response.WriteError(w, http.StatusForbidden, err)
 		return
 	}
 	response.WriteSuccess(w, http.StatusOK, "business deleted successfully", nil)
@@ -156,26 +156,26 @@ func (h *BusinessHandler) delete(w http.ResponseWriter, r *http.Request) {
 func (h *BusinessHandler) addUser(w http.ResponseWriter, r *http.Request) {
 	requesterID, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("authentication required")))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 	businessID, err := request.ParseId(r)
 	if err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 	payload, err := request.ParseJSON[addBusinessUserRequest](r)
 	if err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 	if err := response.ValidationError(payload); err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 
 	if err := h.UC.AddUserToBusiness(r.Context(), requesterID, businessID, payload.UserID, payload.Role); err != nil {
-		response.WriteJson(w, http.StatusForbidden, response.GeneralError(err))
+		response.WriteError(w, http.StatusForbidden, err)
 		return
 	}
 
@@ -185,24 +185,24 @@ func (h *BusinessHandler) addUser(w http.ResponseWriter, r *http.Request) {
 func (h *BusinessHandler) removeUser(w http.ResponseWriter, r *http.Request) {
 	requesterID, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("authentication required")))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 	businessID, err := request.ParseId(r)
 	if err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 
 	rawUserID := r.PathValue("userId")
 	userID, err := strconv.ParseInt(rawUserID, 10, 64)
 	if err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(errors.New("userId must be a valid integer")))
+		response.WriteError(w, http.StatusBadRequest, errors.New("userId must be a valid integer"))
 		return
 	}
 
 	if err := h.UC.RemoveUserFromBusiness(r.Context(), requesterID, businessID, userID); err != nil {
-		response.WriteJson(w, http.StatusForbidden, response.GeneralError(err))
+		response.WriteError(w, http.StatusForbidden, err)
 		return
 	}
 	response.WriteSuccess(w, http.StatusOK, "user removed from business successfully", nil)
@@ -211,18 +211,18 @@ func (h *BusinessHandler) removeUser(w http.ResponseWriter, r *http.Request) {
 func (h *BusinessHandler) getUsers(w http.ResponseWriter, r *http.Request) {
 	requesterID, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("authentication required")))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 	businessID, err := request.ParseId(r)
 	if err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 
 	users, err := h.UC.GetBusinessUsers(r.Context(), requesterID, businessID)
 	if err != nil {
-		response.WriteJson(w, http.StatusForbidden, response.GeneralError(err))
+		response.WriteError(w, http.StatusForbidden, err)
 		return
 	}
 	response.WriteJson(w, http.StatusOK, users)
@@ -231,14 +231,14 @@ func (h *BusinessHandler) getUsers(w http.ResponseWriter, r *http.Request) {
 func (h *BusinessHandler) getMyBusinesses(w http.ResponseWriter, r *http.Request) {
 	userID, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("authentication required")))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 
 	businesses, err := h.UC.GetUserBusinesses(r.Context(), userID)
 	if err != nil {
 		slog.Error("failed to get my businesses", slog.Any("error", err))
-		response.WriteJson(w, http.StatusInternalServerError, response.GeneralError(err))
+		response.WriteDomainError(w, err)
 		return
 	}
 	response.WriteJson(w, http.StatusOK, businesses)
@@ -247,26 +247,26 @@ func (h *BusinessHandler) getMyBusinesses(w http.ResponseWriter, r *http.Request
 func (h *BusinessHandler) createInvite(w http.ResponseWriter, r *http.Request) {
 	requesterID, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("authentication required")))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 	businessID, err := request.ParseId(r)
 	if err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 	payload, err := request.ParseJSON[createInviteRequest](r)
 	if err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 	if err := response.ValidationError(payload); err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 	invite, err := h.UC.CreateInvite(r.Context(), requesterID, businessID, payload.Email, payload.Role)
 	if err != nil {
-		response.WriteJson(w, http.StatusForbidden, response.GeneralError(err))
+		response.WriteError(w, http.StatusForbidden, err)
 		return
 	}
 	response.WriteSuccess(w, http.StatusCreated, "invite created successfully", invite)
@@ -275,17 +275,17 @@ func (h *BusinessHandler) createInvite(w http.ResponseWriter, r *http.Request) {
 func (h *BusinessHandler) listInvites(w http.ResponseWriter, r *http.Request) {
 	requesterID, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("authentication required")))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 	businessID, err := request.ParseId(r)
 	if err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 	invites, err := h.UC.ListInvites(r.Context(), requesterID, businessID)
 	if err != nil {
-		response.WriteJson(w, http.StatusForbidden, response.GeneralError(err))
+		response.WriteError(w, http.StatusForbidden, err)
 		return
 	}
 	response.WriteJson(w, http.StatusOK, invites)
@@ -294,22 +294,22 @@ func (h *BusinessHandler) listInvites(w http.ResponseWriter, r *http.Request) {
 func (h *BusinessHandler) revokeInvite(w http.ResponseWriter, r *http.Request) {
 	requesterID, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("authentication required")))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 	businessID, err := request.ParseId(r)
 	if err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 	rawInviteID := r.PathValue("inviteId")
 	inviteID, err := strconv.ParseInt(rawInviteID, 10, 64)
 	if err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(errors.New("inviteId must be a valid integer")))
+		response.WriteError(w, http.StatusBadRequest, errors.New("inviteId must be a valid integer"))
 		return
 	}
 	if err := h.UC.RevokeInvite(r.Context(), requesterID, businessID, inviteID); err != nil {
-		response.WriteJson(w, http.StatusForbidden, response.GeneralError(err))
+		response.WriteError(w, http.StatusForbidden, err)
 		return
 	}
 	response.WriteSuccess(w, http.StatusOK, "invite revoked successfully", nil)
@@ -318,26 +318,26 @@ func (h *BusinessHandler) revokeInvite(w http.ResponseWriter, r *http.Request) {
 func (h *BusinessHandler) addDomain(w http.ResponseWriter, r *http.Request) {
 	requesterID, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("authentication required")))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 	businessID, err := request.ParseId(r)
 	if err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 	payload, err := request.ParseJSON[addDomainRequest](r)
 	if err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 	if err := response.ValidationError(payload); err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 	domain, err := h.UC.AddDomain(r.Context(), requesterID, businessID, payload.Domain)
 	if err != nil {
-		response.WriteJson(w, http.StatusForbidden, response.GeneralError(err))
+		response.WriteError(w, http.StatusForbidden, err)
 		return
 	}
 	response.WriteSuccess(w, http.StatusCreated, "domain added successfully", domain)
@@ -346,26 +346,26 @@ func (h *BusinessHandler) addDomain(w http.ResponseWriter, r *http.Request) {
 func (h *BusinessHandler) verifyDomain(w http.ResponseWriter, r *http.Request) {
 	requesterID, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("authentication required")))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 	businessID, err := request.ParseId(r)
 	if err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 	payload, err := request.ParseJSON[verifyDomainRequest](r)
 	if err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 	if err := response.ValidationError(payload); err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 	domain, err := h.UC.VerifyDomain(r.Context(), requesterID, businessID, payload.VerificationToken)
 	if err != nil {
-		response.WriteJson(w, http.StatusForbidden, response.GeneralError(err))
+		response.WriteError(w, http.StatusForbidden, err)
 		return
 	}
 	response.WriteSuccess(w, http.StatusOK, "domain verified successfully", domain)
@@ -374,27 +374,27 @@ func (h *BusinessHandler) verifyDomain(w http.ResponseWriter, r *http.Request) {
 func (h *BusinessHandler) toggleDomainAutoJoin(w http.ResponseWriter, r *http.Request) {
 	requesterID, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("authentication required")))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 	businessID, err := request.ParseId(r)
 	if err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 	rawDomainID := r.PathValue("domainId")
 	domainID, err := strconv.ParseInt(rawDomainID, 10, 64)
 	if err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(errors.New("domainId must be a valid integer")))
+		response.WriteError(w, http.StatusBadRequest, errors.New("domainId must be a valid integer"))
 		return
 	}
 	payload, err := request.ParseJSON[toggleDomainAutoJoinRequest](r)
 	if err != nil {
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 	if err := h.UC.ToggleDomainAutoJoin(r.Context(), requesterID, businessID, domainID, payload.AutoJoinEnabled); err != nil {
-		response.WriteJson(w, http.StatusForbidden, response.GeneralError(err))
+		response.WriteError(w, http.StatusForbidden, err)
 		return
 	}
 	response.WriteSuccess(w, http.StatusOK, "domain auto-join updated successfully", nil)

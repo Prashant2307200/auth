@@ -9,12 +9,36 @@ import (
 
 	"github.com/Prashant2307200/auth-service/internal/entity"
 	"github.com/Prashant2307200/auth-service/internal/testutil"
+	pkghash "github.com/Prashant2307200/auth-service/pkg/hash"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
 func TestAuthUseCase_RegisterUser(t *testing.T) {
+	t.Run("validation errors", func(t *testing.T) {
+		userRepo := new(testutil.MockUserRepo)
+		tokenService := new(testutil.MockTokenService)
+		cloudService := new(testutil.MockCloudService)
+
+		uc := NewAuthUseCase(userRepo, nil, tokenService, cloudService)
+		user := &entity.User{Email: "bademail", Username: "ab", Password: "weak"}
+		_, _, err := uc.RegisterUser(context.Background(), user, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "validation failed")
+	})
+	t.Run("invalid profile pic", func(t *testing.T) {
+		userRepo := new(testutil.MockUserRepo)
+		tokenService := new(testutil.MockTokenService)
+		cloudService := new(testutil.MockCloudService)
+
+		uc := NewAuthUseCase(userRepo, nil, tokenService, cloudService)
+		user := &entity.User{Email: "newuser@example.com", Username: "newuser", Password: "Password1!", ProfilePic: "javascript:alert(1)"}
+		_, _, err := uc.RegisterUser(context.Background(), user, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "validation failed")
+		assert.Contains(t, err.Error(), "profile_pic")
+	})
 	tests := []struct {
 		name               string
 		user               *entity.User
@@ -29,7 +53,7 @@ func TestAuthUseCase_RegisterUser(t *testing.T) {
 			user: &entity.User{
 				Email:    "newuser@example.com",
 				Username: "newuser",
-				Password: "password123",
+				Password: "Password1!",
 			},
 			setupMocks: func(userRepo *testutil.MockUserRepo, tokenService *testutil.MockTokenService, cloudService *testutil.MockCloudService) {
 				userRepo.On("GetByEmail", mock.Anything, "newuser@example.com").Return(nil, sql.ErrNoRows)
@@ -49,7 +73,7 @@ func TestAuthUseCase_RegisterUser(t *testing.T) {
 			user: &entity.User{
 				Email:    "existing@example.com",
 				Username: "existing",
-				Password: "password123",
+				Password: "Password1!",
 			},
 			setupMocks: func(userRepo *testutil.MockUserRepo, tokenService *testutil.MockTokenService, cloudService *testutil.MockCloudService) {
 				existingUser := testutil.CreateTestUserWithEmail("existing@example.com")
@@ -63,7 +87,7 @@ func TestAuthUseCase_RegisterUser(t *testing.T) {
 			user: &entity.User{
 				Email:    "test@example.com",
 				Username: "test",
-				Password: "password123",
+				Password: "Password1!",
 			},
 			setupMocks: func(userRepo *testutil.MockUserRepo, tokenService *testutil.MockTokenService, cloudService *testutil.MockCloudService) {
 				userRepo.On("GetByEmail", mock.Anything, "test@example.com").Return(nil, errors.New("database error"))
@@ -76,7 +100,7 @@ func TestAuthUseCase_RegisterUser(t *testing.T) {
 			user: &entity.User{
 				Email:    "test@example.com",
 				Username: "test",
-				Password: "password123",
+				Password: "Password1!",
 			},
 			setupMocks: func(userRepo *testutil.MockUserRepo, tokenService *testutil.MockTokenService, cloudService *testutil.MockCloudService) {
 				userRepo.On("GetByEmail", mock.Anything, "test@example.com").Return(nil, sql.ErrNoRows)
@@ -90,7 +114,7 @@ func TestAuthUseCase_RegisterUser(t *testing.T) {
 			user: &entity.User{
 				Email:    "test@example.com",
 				Username: "test",
-				Password: "password123",
+				Password: "Password1!",
 			},
 			setupMocks: func(userRepo *testutil.MockUserRepo, tokenService *testutil.MockTokenService, cloudService *testutil.MockCloudService) {
 				userRepo.On("GetByEmail", mock.Anything, "test@example.com").Return(nil, sql.ErrNoRows)
@@ -142,7 +166,7 @@ func TestAuthUseCase_RegisterUser(t *testing.T) {
 }
 
 func TestAuthUseCase_RegisterUser_WithInviteToken(t *testing.T) {
-	user := &entity.User{Email: "invited@acme.com", Username: "invited", Password: "pass123"}
+	user := &entity.User{Email: "invited@acme.com", Username: "invited", Password: "Password1!"}
 	inv := testutil.CreateTestInvite(10, "invited@acme.com", "tok-abc", entity.InviteStatusPending, time.Now().Add(24*time.Hour))
 	inv.ID = 5
 
@@ -173,7 +197,7 @@ func TestAuthUseCase_RegisterUser_WithInviteToken(t *testing.T) {
 }
 
 func TestAuthUseCase_RegisterUser_InviteExpired(t *testing.T) {
-	user := &entity.User{Email: "invited@acme.com", Username: "invited", Password: "pass123"}
+	user := &entity.User{Email: "invited@acme.com", Username: "invited", Password: "Password1!"}
 	inv := testutil.CreateTestInvite(10, "invited@acme.com", "tok-abc", entity.InviteStatusPending, time.Now().Add(-time.Hour))
 
 	userRepo := new(testutil.MockUserRepo)
@@ -183,6 +207,7 @@ func TestAuthUseCase_RegisterUser_InviteExpired(t *testing.T) {
 
 	userRepo.On("GetByEmail", mock.Anything, "invited@acme.com").Return(nil, sql.ErrNoRows)
 	userRepo.On("Create", mock.Anything, mock.AnythingOfType("*entity.User")).Return(int64(100), nil)
+	userRepo.On("DeleteById", mock.Anything, int64(100)).Return(nil)
 	businessRepo.On("GetInviteByToken", mock.Anything, "tok-abc").Return(inv, nil)
 
 	uc := NewAuthUseCase(userRepo, businessRepo, tokenService, cloudService)
@@ -194,7 +219,7 @@ func TestAuthUseCase_RegisterUser_InviteExpired(t *testing.T) {
 }
 
 func TestAuthUseCase_RegisterUser_InviteEmailMismatch(t *testing.T) {
-	user := &entity.User{Email: "other@acme.com", Username: "other", Password: "pass123"}
+	user := &entity.User{Email: "other@acme.com", Username: "other", Password: "Password1!"}
 	inv := testutil.CreateTestInvite(10, "invited@acme.com", "tok-abc", entity.InviteStatusPending, time.Now().Add(24*time.Hour))
 
 	userRepo := new(testutil.MockUserRepo)
@@ -204,6 +229,7 @@ func TestAuthUseCase_RegisterUser_InviteEmailMismatch(t *testing.T) {
 
 	userRepo.On("GetByEmail", mock.Anything, "other@acme.com").Return(nil, sql.ErrNoRows)
 	userRepo.On("Create", mock.Anything, mock.AnythingOfType("*entity.User")).Return(int64(100), nil)
+	userRepo.On("DeleteById", mock.Anything, int64(100)).Return(nil)
 	businessRepo.On("GetInviteByToken", mock.Anything, "tok-abc").Return(inv, nil)
 
 	uc := NewAuthUseCase(userRepo, businessRepo, tokenService, cloudService)
@@ -215,7 +241,7 @@ func TestAuthUseCase_RegisterUser_InviteEmailMismatch(t *testing.T) {
 }
 
 func TestAuthUseCase_RegisterUser_WithBusinessSlug(t *testing.T) {
-	user := &entity.User{Email: "new@test.com", Username: "newuser", Password: "pass123"}
+	user := &entity.User{Email: "new@test.com", Username: "newuser", Password: "Password1!"}
 	biz := testutil.CreateTestBusinessWithSignupPolicy("open-biz", entity.SignupPolicyOpen)
 
 	userRepo := new(testutil.MockUserRepo)
@@ -243,7 +269,7 @@ func TestAuthUseCase_RegisterUser_WithBusinessSlug(t *testing.T) {
 }
 
 func TestAuthUseCase_RegisterUser_WithDomainAutoJoin(t *testing.T) {
-	user := &entity.User{Email: "emp@acme.com", Username: "emp", Password: "pass123"}
+	user := &entity.User{Email: "emp@acme.com", Username: "emp", Password: "Password1!"}
 	biz := testutil.CreateTestBusiness()
 
 	userRepo := new(testutil.MockUserRepo)
@@ -270,6 +296,16 @@ func TestAuthUseCase_RegisterUser_WithDomainAutoJoin(t *testing.T) {
 }
 
 func TestAuthUseCase_LoginUser(t *testing.T) {
+	t.Run("validation errors", func(t *testing.T) {
+		userRepo := new(testutil.MockUserRepo)
+		tokenService := new(testutil.MockTokenService)
+		cloudService := new(testutil.MockCloudService)
+
+		uc := NewAuthUseCase(userRepo, nil, tokenService, cloudService)
+		_, _, err := uc.LoginUser(context.Background(), "bademail", "short")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "validation failed")
+	})
 	tests := []struct {
 		name       string
 		email      string
@@ -284,13 +320,17 @@ func TestAuthUseCase_LoginUser(t *testing.T) {
 			password: "password123",
 			setupMocks: func(userRepo *testutil.MockUserRepo, tokenService *testutil.MockTokenService, cloudService *testutil.MockCloudService) {
 				user := testutil.CreateTestUser()
-				// Note: In real tests, you'd hash the password properly
-				// For now, we'll test the error path since password hashing happens in the usecase
-				user.Password = "hashedpassword" // This will fail password check, testing error path
+				// Create a bcrypt hash with cost 10 (outdated) so NeedsRehash returns true
+				hashLow, _ := pkghash.HashPasswordWithCost("password123", 10)
+				user.Password = hashLow
 				userRepo.On("GetByEmail", mock.Anything, "test@example.com").Return(user, nil)
+				userRepo.On("UpdatePassword", mock.Anything, user.ID, mock.AnythingOfType("string")).Return(nil)
+				// token service expectations for successful login
+				tokenService.On("GenerateRefreshToken", user.ID).Return("refresh_token", nil)
+				tokenService.On("StoreRefreshToken", mock.Anything, user.ID, "refresh_token").Return(nil)
+				tokenService.On("GenerateAccessToken", user.ID).Return("access_token", nil)
 			},
-			wantErr:    true,
-			wantErrMsg: "invalid password",
+			wantErr: false,
 		},
 		{
 			name:     "user not found",
@@ -406,7 +446,7 @@ func TestAuthUseCase_GetAuthUserProfile(t *testing.T) {
 				user := testutil.CreateTestUserWithID(1)
 				userRepo.On("GetById", mock.Anything, int64(1)).Return(user, nil)
 			},
-			wantErr: false,
+			wantErr:  false,
 			wantUser: testutil.CreateTestUserWithID(1),
 		},
 		{
@@ -498,6 +538,18 @@ func TestAuthUseCase_UpdateAuthUserProfile(t *testing.T) {
 			userRepo.AssertExpectations(t)
 		})
 	}
+
+	t.Run("invalid profile pic", func(t *testing.T) {
+		userRepo := new(testutil.MockUserRepo)
+		tokenService := new(testutil.MockTokenService)
+		cloudService := new(testutil.MockCloudService)
+
+		uc := NewAuthUseCase(userRepo, nil, tokenService, cloudService)
+		err := uc.UpdateAuthUserProfile(context.Background(), int64(1), &entity.User{ProfilePic: "javascript:alert(1)"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "validation failed")
+		assert.Contains(t, err.Error(), "profile_pic")
+	})
 }
 
 func TestAuthUseCase_RegisterUser_WithOnboarding(t *testing.T) {
@@ -507,7 +559,7 @@ func TestAuthUseCase_RegisterUser_WithOnboarding(t *testing.T) {
 		tokenService := new(testutil.MockTokenService)
 		cloudService := new(testutil.MockCloudService)
 
-		user := &entity.User{Email: "invited@acme.com", Username: "invited", Password: "pass123"}
+		user := &entity.User{Email: "invited@acme.com", Username: "invited", Password: "Password1!"}
 		invite := testutil.CreateTestInvite(10, "invited@acme.com", "tok-abc", entity.InviteStatusPending, time.Now().Add(24*time.Hour))
 
 		userRepo.On("GetByEmail", mock.Anything, "invited@acme.com").Return(nil, sql.ErrNoRows)
@@ -532,11 +584,12 @@ func TestAuthUseCase_RegisterUser_WithOnboarding(t *testing.T) {
 		tokenService := new(testutil.MockTokenService)
 		cloudService := new(testutil.MockCloudService)
 
-		user := &entity.User{Email: "invited@acme.com", Username: "invited", Password: "pass123"}
+		user := &entity.User{Email: "invited@acme.com", Username: "invited", Password: "Password1!"}
 		invite := testutil.CreateTestInvite(10, "invited@acme.com", "tok-abc", entity.InviteStatusPending, time.Now().Add(-1*time.Hour))
 
 		userRepo.On("GetByEmail", mock.Anything, "invited@acme.com").Return(nil, sql.ErrNoRows)
 		userRepo.On("Create", mock.Anything, mock.AnythingOfType("*entity.User")).Return(int64(100), nil)
+		userRepo.On("DeleteById", mock.Anything, int64(100)).Return(nil)
 		businessRepo.On("GetInviteByToken", mock.Anything, "tok-abc").Return(invite, nil)
 
 		uc := NewAuthUseCase(userRepo, businessRepo, tokenService, cloudService)
@@ -551,7 +604,7 @@ func TestAuthUseCase_RegisterUser_WithOnboarding(t *testing.T) {
 		tokenService := new(testutil.MockTokenService)
 		cloudService := new(testutil.MockCloudService)
 
-		user := &entity.User{Email: "new@test.com", Username: "newuser", Password: "pass123"}
+		user := &entity.User{Email: "new@test.com", Username: "newuser", Password: "Password1!"}
 		biz := testutil.CreateTestBusinessWithSignupPolicy("openco", entity.SignupPolicyOpen)
 
 		userRepo.On("GetByEmail", mock.Anything, "new@test.com").Return(nil, sql.ErrNoRows)
@@ -576,7 +629,7 @@ func TestAuthUseCase_RegisterUser_WithOnboarding(t *testing.T) {
 		tokenService := new(testutil.MockTokenService)
 		cloudService := new(testutil.MockCloudService)
 
-		user := &entity.User{Email: "employee@company.com", Username: "emp", Password: "pass123"}
+		user := &entity.User{Email: "employee@company.com", Username: "emp", Password: "Password1!"}
 		biz := testutil.CreateTestBusinessWithSignupPolicy("company", entity.SignupPolicyClosed)
 		biz.ID = 20
 

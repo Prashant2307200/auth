@@ -1,29 +1,16 @@
-FROM golang:alpine AS builder
-
-ENV GOTOOLCHAIN=auto
-
-RUN apk add --no-cache upx
-
-WORKDIR /app
-
-COPY go.* ./
-
+FROM golang:1.24-alpine AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN apk add --no-cache git
 RUN go mod download
-
 COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -o /app ./cmd/main
 
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o server ./cmd/main
-
-RUN upx --best --lzma ./server
-
-FROM alpine:latest AS runner
-
-WORKDIR /app
-
-COPY --from=builder /app/server ./
-
-USER 1000:1000
-
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates wget
+COPY --from=builder /app /app
 EXPOSE 8080
-
-CMD ["./server"]
+EXPOSE 9090
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD wget -q -O- http://127.0.0.1:8080/health/live || exit 1
+ENTRYPOINT ["/app"]

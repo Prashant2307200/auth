@@ -12,6 +12,15 @@ import (
 )
 
 func ParseId(r *http.Request) (int64, error) {
+	// First try query parameter (useful for tests and simple clients)
+	if q := r.URL.Query().Get("id"); q != "" {
+		rawId := q
+		id, err := strconv.ParseInt(rawId, 10, 64)
+		if err != nil {
+			return 0, errors.New("id must be a valid integer")
+		}
+		return id, nil
+	}
 
 	rawId := r.PathValue("id")
 	if rawId == "" {
@@ -26,21 +35,30 @@ func ParseId(r *http.Request) (int64, error) {
 	return id, nil
 }
 
-func ParseJSON[T any](r *http.Request) (*T, error) {
+const defaultMaxBodyBytes = 1024 * 1024 // 1MB
 
+func ParseJSON[T any](r *http.Request) (*T, error) {
+	return ParseJSONWithLimit[T](r, defaultMaxBodyBytes)
+}
+
+func ParseJSONWithLimit[T any](r *http.Request, maxBytes int64) (*T, error) {
 	var data T
 
-	err := json.NewDecoder(r.Body).Decode(&data)
+	limited := io.LimitReader(r.Body, maxBytes)
+	dec := json.NewDecoder(limited)
+	dec.DisallowUnknownFields()
+
+	err := dec.Decode(&data)
 	if errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("failed to decode JSON: %w", err)
 	}
 	if err != nil {
 		return nil, errors.New("invalid request body")
 	}
-	
+
 	defer r.Body.Close()
-	
-	return &data, err
+
+	return &data, nil
 }
 
 func ParseMultipartForm[T any](r *http.Request, maxMemory int64, fileField string) (*T, multipart.File, *multipart.FileHeader, error) {
@@ -85,7 +103,7 @@ func ParseMultipartForm[T any](r *http.Request, maxMemory int64, fileField strin
 	file, fileHeader, err := r.FormFile(fileField)
 	if err != nil {
 		if errors.Is(err, http.ErrMissingFile) {
-			return nil, nil, nil, nil 
+			return &result, nil, nil, nil
 		}
 		return nil, nil, nil, err
 	}

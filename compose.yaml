@@ -43,6 +43,7 @@ services:
     container_name: auth-service
     ports:
       - "8080:8080"
+      - "9090:9090"
     environment:
       # Config path
       CONFIG_PATH: /app/config/docker.yaml
@@ -58,15 +59,13 @@ services:
       # Environment
       ENV: "dev"
       
-      # Secrets (change these in production!)
-      ACCESS_TOKEN_SECRET: "kRbZnaqqtfk7xHklLwPEf/bt+OsvxEFgoNNiPkyoD8C9+4pHRbiPS6vdv1nGzPR+I3L6Sy9u3c/iPLD7fQqR7g=="
-      REFRESH_TOKEN_SECRET: "your-refresh-token-secret-change-in-production"
-      COOKIE_SECRET: "your-cookie-secret-change-in-production"
+      # Secrets (refresh + Cloudinary required; see internal/config/config.go)
+      REFRESH_TOKEN_SECRET: "${REFRESH_TOKEN_SECRET}"
       
-      # Cloudinary
-      NAME: "dyrb0ytef"
-      API_KEY: "888923427284328"
-      API_SECRET: "wDYpMIwf_og6dKfEgAfmqes1a9w"
+      # Cloudinary - set via env or replace for production
+      NAME: "${NAME}"
+      API_KEY: "${API_KEY}"
+      API_SECRET: "${API_SECRET}"
     volumes:
       - ./config:/app/config:ro
       - ./keys:/app/keys:ro
