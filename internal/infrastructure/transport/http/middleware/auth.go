@@ -53,3 +53,9 @@ func GetUserIDFromContext(ctx context.Context) (int64, error) {
 	}
 	return user, nil
 }
+
+// ContextWithUserID returns a new context with the given user ID set.
+// This is useful for testing handlers that depend on authenticated context.
+func ContextWithUserID(ctx context.Context, userID int64) context.Context {
+	return context.WithValue(ctx, userContextKey, userID)
+}
