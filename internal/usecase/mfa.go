@@ -9,21 +9,25 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 
+	"github.com/Prashant2307200/auth-service/internal/entity"
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/repository"
 	"github.com/Prashant2307200/auth-service/internal/usecase/interfaces"
+	"github.com/Prashant2307200/auth-service/pkg/encrypt"
 )
 
 var (
-	ErrMFANotEnabled    = errors.New("MFA is not enabled for this user")
+	ErrMFANotEnabled     = errors.New("MFA is not enabled for this user")
 	ErrMFAAlreadyEnabled = errors.New("MFA is already enabled for this user")
-	ErrInvalidTOTPCode  = errors.New("invalid TOTP code")
+	ErrInvalidTOTPCode   = errors.New("invalid TOTP code")
 	ErrInvalidBackupCode = errors.New("invalid backup code")
-	ErrMFASetupRequired = errors.New("MFA setup required")
+	ErrMFASetupRequired  = errors.New("MFA setup required")
+	ErrMFARequired       = errors.New("MFA verification required")
 )
 
 const (
@@ -49,15 +53,33 @@ type MFAUsecase interface {
 }
 
 type mfaUsecase struct {
-	userRepo interfaces.UserRepo
-	mfaRepo  repository.MFARepository
+	userRepo      interfaces.UserRepo
+	mfaRepo       repository.MFARepository
+	auditRepo     repository.AuditRepository
+	encryptionKey []byte // 32-byte AES key
 }
 
-func NewMFAUsecase(userRepo interfaces.UserRepo, mfaRepo repository.MFARepository) MFAUsecase {
+func NewMFAUsecase(userRepo interfaces.UserRepo, mfaRepo repository.MFARepository, auditRepo repository.AuditRepository, encryptionKey []byte) MFAUsecase {
 	return &mfaUsecase{
-		userRepo: userRepo,
-		mfaRepo:  mfaRepo,
+		userRepo:      userRepo,
+		mfaRepo:       mfaRepo,
+		auditRepo:     auditRepo,
+		encryptionKey: encryptionKey,
 	}
+}
+
+func (u *mfaUsecase) encryptSecret(secret string) (string, error) {
+	if len(u.encryptionKey) == 0 {
+		return secret, nil // fallback: no encryption configured
+	}
+	return encrypt.Encrypt(secret, u.encryptionKey)
+}
+
+func (u *mfaUsecase) decryptSecret(encrypted string) (string, error) {
+	if len(u.encryptionKey) == 0 {
+		return encrypted, nil // fallback: no encryption configured
+	}
+	return encrypt.Decrypt(encrypted, u.encryptionKey)
 }
 
 func (u *mfaUsecase) Setup(ctx context.Context, userID int64, email string) (*MFASetupResult, error) {
@@ -77,7 +99,12 @@ func (u *mfaUsecase) Setup(ctx context.Context, userID int64, email string) (*MF
 		return nil, fmt.Errorf("failed to generate TOTP key: %w", err)
 	}
 
-	_, err = u.mfaRepo.Create(ctx, userID, key.Secret())
+	encryptedSecret, err := u.encryptSecret(key.Secret())
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt MFA secret: %w", err)
+	}
+
+	_, err = u.mfaRepo.Create(ctx, userID, encryptedSecret)
 	if err != nil {
 		return nil, fmt.Errorf("failed to store MFA secret: %w", err)
 	}
@@ -98,7 +125,12 @@ func (u *mfaUsecase) Enable(ctx context.Context, userID int64, code string) ([]s
 		return nil, ErrMFAAlreadyEnabled
 	}
 
-	if !totp.Validate(code, mfa.SecretEncrypted) {
+	secret, err := u.decryptSecret(mfa.SecretEncrypted)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt MFA secret: %w", err)
+	}
+
+	if !totp.Validate(code, secret) {
 		return nil, ErrInvalidTOTPCode
 	}
 
@@ -108,6 +140,8 @@ func (u *mfaUsecase) Enable(ctx context.Context, userID int64, code string) ([]s
 	if err := u.mfaRepo.Enable(ctx, userID, hashedCodes); err != nil {
 		return nil, fmt.Errorf("failed to enable MFA: %w", err)
 	}
+
+	u.logAudit(ctx, userID, entity.AuditActionUserMFAEnabled)
 
 	return backupCodes, nil
 }
@@ -122,7 +156,12 @@ func (u *mfaUsecase) Disable(ctx context.Context, userID int64, code string) err
 		return ErrMFANotEnabled
 	}
 
-	if !totp.Validate(code, mfa.SecretEncrypted) {
+	secret, err := u.decryptSecret(mfa.SecretEncrypted)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt MFA secret: %w", err)
+	}
+
+	if !totp.Validate(code, secret) {
 		if !u.verifyBackupCodeInternal(mfa.BackupCodesHash, code) {
 			return ErrInvalidTOTPCode
 		}
@@ -131,6 +170,8 @@ func (u *mfaUsecase) Disable(ctx context.Context, userID int64, code string) err
 	if err := u.mfaRepo.Delete(ctx, userID); err != nil {
 		return fmt.Errorf("failed to disable MFA: %w", err)
 	}
+
+	u.logAudit(ctx, userID, entity.AuditActionUserMFADisabled)
 
 	return nil
 }
@@ -145,7 +186,12 @@ func (u *mfaUsecase) Verify(ctx context.Context, userID int64, code string) erro
 		return ErrMFANotEnabled
 	}
 
-	if !totp.Validate(code, mfa.SecretEncrypted) {
+	secret, err := u.decryptSecret(mfa.SecretEncrypted)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt MFA secret: %w", err)
+	}
+
+	if !totp.Validate(code, secret) {
 		return ErrInvalidTOTPCode
 	}
 
@@ -197,7 +243,12 @@ func (u *mfaUsecase) RegenerateBackupCodes(ctx context.Context, userID int64, co
 		return nil, ErrMFANotEnabled
 	}
 
-	if !totp.Validate(code, mfa.SecretEncrypted) {
+	secret, err := u.decryptSecret(mfa.SecretEncrypted)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt MFA secret: %w", err)
+	}
+
+	if !totp.Validate(code, secret) {
 		return nil, ErrInvalidTOTPCode
 	}
 
@@ -230,6 +281,18 @@ func (u *mfaUsecase) verifyBackupCodeInternal(hashedCodes []string, code string)
 		}
 	}
 	return false
+}
+
+func (u *mfaUsecase) logAudit(ctx context.Context, userID int64, action string) {
+	if u.auditRepo == nil {
+		return
+	}
+	if err := u.auditRepo.Log(ctx, &entity.AuditLog{
+		UserID: userID,
+		Action: action,
+	}); err != nil {
+		slog.Error("failed to log audit event", slog.String("action", action), slog.Int64("user_id", userID), slog.Any("error", err))
+	}
 }
 
 func generateBackupCodes(count, length int) []string {

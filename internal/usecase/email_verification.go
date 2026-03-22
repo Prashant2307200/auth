@@ -5,8 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"log/slog"
 	"time"
 
+	"github.com/Prashant2307200/auth-service/internal/entity"
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/repository"
 	"github.com/Prashant2307200/auth-service/internal/usecase/interfaces"
 )
@@ -26,18 +28,24 @@ type emailVerificationUsecase struct {
 	userRepo     interfaces.UserRepo
 	verifyRepo   repository.EmailVerificationRepository
 	emailService EmailService
+	auditRepo    repository.AuditRepository
 }
 
 func NewEmailVerificationUsecase(
 	userRepo interfaces.UserRepo,
 	verifyRepo repository.EmailVerificationRepository,
 	emailService EmailService,
+	auditRepo ...repository.AuditRepository,
 ) EmailVerificationUsecase {
-	return &emailVerificationUsecase{
+	uc := &emailVerificationUsecase{
 		userRepo:     userRepo,
 		verifyRepo:   verifyRepo,
 		emailService: emailService,
 	}
+	if len(auditRepo) > 0 {
+		uc.auditRepo = auditRepo[0]
+	}
+	return uc
 }
 
 func (u *emailVerificationUsecase) SendVerification(ctx context.Context, userID int64, email string) error {
@@ -90,6 +98,8 @@ func (u *emailVerificationUsecase) VerifyEmail(ctx context.Context, token string
 
 	_ = u.verifyRepo.DeleteAllForUser(ctx, verifyToken.UserID)
 
+	u.logAudit(ctx, verifyToken.UserID, entity.AuditActionUserEmailVerified)
+
 	return nil
 }
 
@@ -104,6 +114,18 @@ func (u *emailVerificationUsecase) ResendVerification(ctx context.Context, userI
 	}
 
 	return u.SendVerification(ctx, userID, user.Email)
+}
+
+func (u *emailVerificationUsecase) logAudit(ctx context.Context, userID int64, action string) {
+	if u.auditRepo == nil {
+		return
+	}
+	if err := u.auditRepo.Log(ctx, &entity.AuditLog{
+		UserID: userID,
+		Action: action,
+	}); err != nil {
+		slog.Error("failed to log audit event", slog.String("action", action), slog.Int64("user_id", userID), slog.Any("error", err))
+	}
 }
 
 func hashVerificationToken(token string) string {

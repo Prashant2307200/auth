@@ -47,6 +47,12 @@ type OAuth struct {
 	GoogleRedirectURL  string `yaml:"google_redirect_url" env:"GOOGLE_REDIRECT_URL"`
 }
 
+type MFA struct {
+	// EncryptionKey is a 32-byte hex-encoded key used for AES-256-GCM encryption of TOTP secrets.
+	// Required when MFA is enabled. Generate with: openssl rand -hex 32
+	EncryptionKey string `yaml:"encryption_key" env:"MFA_ENCRYPTION_KEY"`
+}
+
 type Config struct {
 	Secrets     Secrets    `yaml:"secrets"`
 	Env         string     `yaml:"env" env:"ENV" env-required:"true" env-default:"dev"`
@@ -55,6 +61,7 @@ type Config struct {
 	Redis       Redis      `yaml:"redis"`
 	Email       Email      `yaml:"email"`
 	OAuth       OAuth      `yaml:"oauth"`
+	MFA         MFA        `yaml:"mfa"`
 	PostgresUri string     `yaml:"postgres_uri" env:"POSTGRES_URI" env-required:"true"`
 	// Optional JWT key paths; if empty, code may fall back to legacy defaults.
 	JWT struct {

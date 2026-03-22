@@ -5,8 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"log/slog"
 	"time"
 
+	"github.com/Prashant2307200/auth-service/internal/entity"
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/repository"
 	"github.com/Prashant2307200/auth-service/internal/usecase/interfaces"
 	"github.com/Prashant2307200/auth-service/pkg/hash"
@@ -25,10 +27,11 @@ type PasswordResetUsecase interface {
 }
 
 type passwordResetUsecase struct {
-	userRepo      interfaces.UserRepo
-	resetRepo     repository.PasswordResetRepository
-	emailService  EmailService
-	tokenService  interfaces.TokenService
+	userRepo     interfaces.UserRepo
+	resetRepo    repository.PasswordResetRepository
+	emailService EmailService
+	tokenService interfaces.TokenService
+	auditRepo    repository.AuditRepository
 }
 
 func NewPasswordResetUsecase(
@@ -36,13 +39,18 @@ func NewPasswordResetUsecase(
 	resetRepo repository.PasswordResetRepository,
 	emailService EmailService,
 	tokenService interfaces.TokenService,
+	auditRepo ...repository.AuditRepository,
 ) PasswordResetUsecase {
-	return &passwordResetUsecase{
+	uc := &passwordResetUsecase{
 		userRepo:     userRepo,
 		resetRepo:    resetRepo,
 		emailService: emailService,
 		tokenService: tokenService,
 	}
+	if len(auditRepo) > 0 {
+		uc.auditRepo = auditRepo[0]
+	}
+	return uc
 }
 
 func (u *passwordResetUsecase) RequestReset(ctx context.Context, email string) (string, error) {
@@ -70,6 +78,8 @@ func (u *passwordResetUsecase) RequestReset(ctx context.Context, email string) (
 	if u.emailService != nil {
 		_ = u.emailService.SendPasswordReset(ctx, email, rawToken)
 	}
+
+	u.logAudit(ctx, user.ID, entity.AuditActionUserPasswordResetRequested)
 
 	return rawToken, nil
 }
@@ -105,7 +115,21 @@ func (u *passwordResetUsecase) ResetPassword(ctx context.Context, token string, 
 
 	_ = u.tokenService.RemoveRefreshToken(ctx, resetToken.UserID)
 
+	u.logAudit(ctx, resetToken.UserID, entity.AuditActionUserPasswordResetCompleted)
+
 	return nil
+}
+
+func (u *passwordResetUsecase) logAudit(ctx context.Context, userID int64, action string) {
+	if u.auditRepo == nil {
+		return
+	}
+	if err := u.auditRepo.Log(ctx, &entity.AuditLog{
+		UserID: userID,
+		Action: action,
+	}); err != nil {
+		slog.Error("failed to log audit event", slog.String("action", action), slog.Int64("user_id", userID), slog.Any("error", err))
+	}
 }
 
 func hashToken(token string) string {

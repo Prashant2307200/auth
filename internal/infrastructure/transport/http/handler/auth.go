@@ -113,6 +113,14 @@ func (h *AuthHandler) login(w http.ResponseWriter, r *http.Request) {
 			response.WriteJson(w, http.StatusBadRequest, map[string]interface{}{"errors": ves})
 			return
 		}
+		// If MFA is required, return a specific response so the client can prompt for TOTP
+		if errors.Is(err, usecase.ErrMFARequired) {
+			response.WriteJson(w, http.StatusOK, map[string]interface{}{
+				"mfa_required": true,
+				"message":      "MFA verification required. Please provide your TOTP code.",
+			})
+			return
+		}
 		slog.Error("Error logging in user", slog.String("email", loginDto.Email), slog.Any("error", err))
 		// Don't expose whether user exists or password is wrong for security
 		response.WriteError(w, http.StatusUnauthorized, errors.New("invalid email or password"))
