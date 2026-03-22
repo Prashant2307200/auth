@@ -34,7 +34,7 @@ func (m *mockTeamUsecase) UpdateMemberRole(ctx context.Context, businessID int64
 	return nil
 }
 func (m *mockTeamUsecase) ValidateInviteEmail(email string) error { return nil }
-func (m *mockTeamUsecase) ValidateRole(role int) error         { return nil }
+func (m *mockTeamUsecase) ValidateRole(role int) error            { return nil }
 
 func TestInviteResponseContract(t *testing.T) {
 	h := NewTeamHandler(&mockTeamUsecase{}, func(h http.Handler) http.Handler { return h })
@@ -79,4 +79,3 @@ func TestUpdateMemberRoleResponseContract(t *testing.T) {
 		t.Fatalf("unexpected body: %s", string(b))
 	}
 }
-

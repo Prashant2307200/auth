@@ -44,9 +44,9 @@ type SSOUsecase interface {
 }
 
 type ssoUsecase struct {
-	userRepo      interfaces.UserRepo
-	tokenService  interfaces.TokenService
-	oauthConfig   *oauth2.Config
+	userRepo     interfaces.UserRepo
+	tokenService interfaces.TokenService
+	oauthConfig  *oauth2.Config
 }
 
 func NewSSOUsecase(userRepo interfaces.UserRepo, tokenService interfaces.TokenService, cfg SSOConfig) SSOUsecase {
