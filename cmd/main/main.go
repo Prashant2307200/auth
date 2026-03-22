@@ -22,9 +22,11 @@ import (
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/utils"
 	"github.com/Prashant2307200/auth-service/internal/seeder"
 	"github.com/Prashant2307200/auth-service/internal/service"
+	authgrpcproto "github.com/Prashant2307200/auth-service/internal/transport/grpc/proto"
 	grpcserver "github.com/Prashant2307200/auth-service/internal/transport/grpc/server"
 	"github.com/Prashant2307200/auth-service/internal/usecase"
 	"github.com/Prashant2307200/auth-service/pkg/db"
+	"github.com/Prashant2307200/auth-service/pkg/invitetoken"
 	"github.com/Prashant2307200/auth-service/pkg/ratelimit"
 	"github.com/Prashant2307200/auth-service/pkg/rdb"
 )
@@ -34,15 +36,18 @@ func main() {
 
 	database, err := db.Connect(cfg.PostgresUri)
 	if err != nil {
-		log.Fatalf("Failed to initialize the storage: %s", err.Error())
+		slog.Error("Failed to initialize the storage", slog.Any("error", err))
+		os.Exit(1)
 	}
 	if err := db.RunMigrations(database.Db); err != nil {
-		log.Fatalf("Failed to run migrations: %s", err.Error())
+		slog.Error("Failed to run migrations", slog.Any("error", err))
+		os.Exit(1)
 	}
 
 	rdb, err := rdb.Connect(cfg.Redis.Addr, cfg.Redis.User, cfg.Redis.Pass)
 	if err != nil {
-		log.Fatalf("Failed to initialize the cache: %s", err.Error())
+		slog.Error("Failed to initialize the cache", slog.Any("error", err))
+		os.Exit(1)
 	}
 
 	defer func() {
@@ -57,21 +62,36 @@ func main() {
 
 	userRepo, err := repository.NewUserRepo(database.Db)
 	if err != nil {
-		log.Fatalf("Failed to initialize the user repository: %s", err.Error())
+		slog.Error("Failed to initialize the user repository", slog.Any("error", err))
+		os.Exit(1)
 		return
 	}
 
 	businessRepo, err := repository.NewBusinessRepo(database.Db)
 	if err != nil {
-		log.Fatalf("Failed to initialize the business repository: %s", err.Error())
+		slog.Error("Failed to initialize the business repository", slog.Any("error", err))
+		os.Exit(1)
 		return
 	}
 
-	// Seed only in dev or when explicitly enabled via SEED_ON_STARTUP env var.
-	if cfg.Env == "dev" || os.Getenv("SEED_ON_STARTUP") == "true" {
+	memberRepo, err := repository.NewMemberRepo(database.Db)
+	if err != nil {
+		slog.Error("Failed to initialize the member repository", slog.Any("error", err))
+		os.Exit(1)
+	}
+	auditRepo, err := repository.NewAuditRepo(database.Db)
+	if err != nil {
+		slog.Error("Failed to initialize the audit repository", slog.Any("error", err))
+		os.Exit(1)
+	}
+
+	// Seed only in dev, or when explicitly enabled and not in production.
+	// This prevents accidental seeding in production even if the env var is set.
+	if cfg.Env == "dev" || (os.Getenv("SEED_ON_STARTUP") == "true" && cfg.Env != "prod") {
 		err = seeder.SeedAll(context.Background(), userRepo, businessRepo)
 		if err != nil {
-			log.Fatalf("Failed to seed the database: %s", err.Error())
+			slog.Error("Failed to seed the database", slog.Any("error", err))
+			os.Exit(1)
 			return
 		}
 		slog.Info("Seeded the database.")
@@ -80,9 +100,19 @@ func main() {
 	}
 
 	cloudService := service.NewCloudinaryUploadService(cfg.Cloud.Name, cfg.Cloud.ApiKey, cfg.Cloud.ApiSecret)
-	tokenService, err := service.NewJWTTokenService(rdb.Rdb, "keys/public.pem", "keys/private.pem", cfg.Secrets.RefreshTokenSecret)
+	// Allow configurable JWT key locations via config, with fallbacks to legacy paths for compatibility.
+	publicKeyPath := cfg.JWT.PublicKeyPath
+	privateKeyPath := cfg.JWT.PrivateKeyPath
+	if publicKeyPath == "" {
+		publicKeyPath = "keys/public.pem"
+	}
+	if privateKeyPath == "" {
+		privateKeyPath = "keys/private.pem"
+	}
+	tokenService, err := service.NewJWTTokenService(rdb.Rdb, publicKeyPath, privateKeyPath, cfg.Secrets.RefreshTokenSecret)
 	if err != nil {
-		log.Fatalf("Failed to initialize token service: %s", err.Error())
+		slog.Error("Failed to initialize token service", slog.Any("error", err))
+		os.Exit(1)
 	}
 
 	userUseCase := usecase.NewUserUseCase(userRepo)
@@ -99,10 +129,59 @@ func main() {
 	authUseCase := usecase.NewAuthUseCase(userRepo, businessRepo, tokenService, cloudService)
 	authHandler := handler.NewAuthHandler(authUseCase, cfg.Env)
 
+	var emailService usecase.EmailService = service.NoopEmailService{}
+	if cfg.Email.APIKey != "" {
+		emailService = service.NewMailerooService(service.MailerooConfig{
+			APIKey:    cfg.Email.APIKey,
+			FromEmail: cfg.Email.FromEmail,
+			FromName:  cfg.Email.FromName,
+			BaseURL:   cfg.Email.BaseURL,
+		})
+	}
+
+	passwordResetRepo := repository.NewPasswordResetRepo(database.Db)
+	passwordResetUC := usecase.NewPasswordResetUsecase(userRepo, passwordResetRepo, emailService, tokenService)
+	passwordResetHandler := handler.NewPasswordResetHandler(passwordResetUC)
+
+	emailVerificationRepo := repository.NewEmailVerificationRepo(database.Db)
+	emailVerificationUC := usecase.NewEmailVerificationUsecase(userRepo, emailVerificationRepo, emailService)
+	emailVerificationHandler := handler.NewEmailVerificationHandler(emailVerificationUC)
+
+	mfaRepo := repository.NewMFARepo(database.Db)
+	mfaUC := usecase.NewMFAUsecase(userRepo, mfaRepo)
+	mfaHandler := handler.NewMFAHandler(mfaUC, userRepo)
+
 	authRouter := http.NewServeMux()
 	authHandler.RegisterRoutes(authRouter)
+	passwordResetHandler.RegisterRoutes(authRouter)
+	emailVerificationHandler.RegisterRoutes(authRouter)
+	mfaHandler.RegisterRoutes(authRouter)
+
+	if cfg.OAuth.GoogleClientID != "" && cfg.OAuth.GoogleClientSecret != "" {
+		ssoUC := usecase.NewSSOUsecase(userRepo, tokenService, usecase.SSOConfig{
+			GoogleClientID:     cfg.OAuth.GoogleClientID,
+			GoogleClientSecret: cfg.OAuth.GoogleClientSecret,
+			GoogleRedirectURL:  cfg.OAuth.GoogleRedirectURL,
+		})
+		ssoHandler := handler.NewSSOHandler(ssoUC, cfg.Env, cfg.Email.BaseURL)
+		ssoHandler.RegisterRoutes(authRouter)
+		slog.Info("Google SSO enabled")
+	}
+
+	sessionService := service.NewSessionService(rdb.Rdb)
+	sessionHandler := handler.NewSessionHandler(sessionService, cfg.Env)
+	sessionHandler.RegisterRoutes(authRouter)
+
+	auditHandler := handler.NewAuditHandler(auditRepo)
+	auditHandler.RegisterRoutes(authRouter)
 	authRateLimiter := ratelimit.NewRateLimiter(0.083, 1)
-	authRouterWithRateLimit := wrapRateLimitedRoutes(authRouter, authRateLimiter, []string{"/register/", "/login/"})
+	authRouterWithRateLimit := wrapRateLimitedRoutes(authRouter, authRateLimiter, []string{"/register/", "/login/", "/forgot-password", "/reset-password"})
+
+	teamUC := usecase.NewTeamUsecase(memberRepo, auditRepo, service.NoopEmailService{}, invitetoken.NewGenerator(cfg.Secrets.RefreshTokenSecret, 24))
+	teamHandler := handler.NewTeamHandler(teamUC, func(next http.Handler) http.Handler { return next })
+	teamRouter := http.NewServeMux()
+	teamHandler.RegisterRoutes(teamRouter)
+	teamHTTP := middleware.TenantFromHeader(http.StripPrefix("/team", teamRouter))
 
 	cleanupTicker := time.NewTicker(5 * time.Minute)
 	defer cleanupTicker.Stop()
@@ -116,6 +195,7 @@ func main() {
 	router.Handle("/auth/", http.StripPrefix("/auth", authRouterWithRateLimit))
 	router.Handle("/users/", http.StripPrefix("/users", userRouter))
 	router.Handle("/business/", http.StripPrefix("/business", businessRouter))
+	router.Handle("/team/", teamHTTP)
 
 	v1 := http.NewServeMux()
 
@@ -174,8 +254,10 @@ func main() {
 	}
 
 	grpcServer := grpc.NewServer()
-	_ = grpcserver.NewTokenService(tokenService, userRepo)
-	_ = grpcserver.NewPublicKeyService(businessRepo)
+	tokenGRPC := grpcserver.NewTokenService(tokenService, userRepo)
+	publicKeyGRPC := grpcserver.NewPublicKeyService(businessRepo)
+	authgrpcproto.RegisterTokenServiceServer(grpcServer, tokenGRPC)
+	authgrpcproto.RegisterPublicKeyServiceServer(grpcServer, publicKeyGRPC)
 
 	go func() {
 		slog.Info("gRPC server starting...", slog.String("address", ":9090"))

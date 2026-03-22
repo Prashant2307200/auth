@@ -3,6 +3,7 @@ package validator
 import (
 	"errors"
 	"net/mail"
+	"net/url"
 	"regexp"
 )
 
@@ -81,5 +82,26 @@ func ValidatePhoneNumber(phone string) (bool, error) {
 	if !re.MatchString(phone) {
 		return false, errors.New("phone must be in E.164 format")
 	}
+	return true, nil
+}
+
+func ValidateProfilePicURL(rawURL string) (bool, error) {
+	if rawURL == "" {
+		return true, nil
+	}
+
+	parsed, err := url.ParseRequestURI(rawURL)
+	if err != nil {
+		return false, errors.New("profile_pic must be a valid URL")
+	}
+
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return false, errors.New("profile_pic must use http or https")
+	}
+
+	if parsed.Host == "" {
+		return false, errors.New("profile_pic must include host")
+	}
+
 	return true, nil
 }

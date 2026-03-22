@@ -18,6 +18,10 @@ type User struct {
 	Role       int    `json:"role" form:"role"`
 	BusinessID *int64 `json:"business_id,omitempty"`
 
+	EmailVerified   bool       `json:"email_verified"`
+	EmailVerifiedAt *time.Time `json:"email_verified_at,omitempty"`
+	GoogleID        *string    `json:"google_id,omitempty"`
+
 	TenantID  int64      `json:"tenant_id,omitempty"`
 	RoleName  string     `json:"role_name,omitempty"`
 	Status    string     `json:"status,omitempty"`

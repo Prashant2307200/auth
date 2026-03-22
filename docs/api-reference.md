@@ -2,6 +2,8 @@
 
 OpenAPI spec: `api/openapi.yaml`
 
+Product/engineering assessment (scores, gaps, roadmap): [`docs/SAAS_AUTH_SERVICE_ASSESSMENT.md`](SAAS_AUTH_SERVICE_ASSESSMENT.md)
+
 Quick start
 
 - Run the service locally: `go run ./cmd/main` (or appropriate start command).

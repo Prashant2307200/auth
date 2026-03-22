@@ -59,6 +59,14 @@ func GetTenantID(r *http.Request) int64 {
 	return 0
 }
 
+// GetBusinessIDFromContext retrieves tenant/business ID from context
+func GetBusinessIDFromContext(ctx context.Context) (int64, error) {
+	if tid, ok := ctx.Value(tenantIDKey).(int64); ok && tid > 0 {
+		return tid, nil
+	}
+	return 0, nil
+}
+
 // GetUserRole retrieves user_role from context
 func GetUserRole(r *http.Request) string {
 	if role, ok := r.Context().Value(userRoleKey).(string); ok {
@@ -71,4 +79,17 @@ func GetUserRole(r *http.Request) string {
 func WithTenantID(r *http.Request, tenantID int64) *http.Request {
 	ctx := context.WithValue(r.Context(), tenantIDKey, tenantID)
 	return r.WithContext(ctx)
+}
+
+// TenantFromHeader sets tenant (business) ID from X-Tenant-ID after authentication.
+// Use for team/org routes when JWT claims do not carry tenant_id.
+func TenantFromHeader(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if v := r.Header.Get("X-Tenant-ID"); v != "" {
+			if id, err := strconv.ParseInt(v, 10, 64); err == nil && id > 0 {
+				r = WithTenantID(r, id)
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }

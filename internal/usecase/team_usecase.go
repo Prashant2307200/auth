@@ -27,6 +27,8 @@ type TeamUsecase interface {
 
 type EmailService interface {
 	SendInvite(ctx context.Context, to string, token string) error
+	SendPasswordReset(ctx context.Context, to string, token string) error
+	SendEmailVerification(ctx context.Context, to string, token string) error
 }
 
 type teamUsecase struct {

@@ -27,6 +27,18 @@ func TestAuthUseCase_RegisterUser(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "validation failed")
 	})
+	t.Run("invalid profile pic", func(t *testing.T) {
+		userRepo := new(testutil.MockUserRepo)
+		tokenService := new(testutil.MockTokenService)
+		cloudService := new(testutil.MockCloudService)
+
+		uc := NewAuthUseCase(userRepo, nil, tokenService, cloudService)
+		user := &entity.User{Email: "newuser@example.com", Username: "newuser", Password: "Password1!", ProfilePic: "javascript:alert(1)"}
+		_, _, err := uc.RegisterUser(context.Background(), user, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "validation failed")
+		assert.Contains(t, err.Error(), "profile_pic")
+	})
 	tests := []struct {
 		name               string
 		user               *entity.User
@@ -526,6 +538,18 @@ func TestAuthUseCase_UpdateAuthUserProfile(t *testing.T) {
 			userRepo.AssertExpectations(t)
 		})
 	}
+
+	t.Run("invalid profile pic", func(t *testing.T) {
+		userRepo := new(testutil.MockUserRepo)
+		tokenService := new(testutil.MockTokenService)
+		cloudService := new(testutil.MockCloudService)
+
+		uc := NewAuthUseCase(userRepo, nil, tokenService, cloudService)
+		err := uc.UpdateAuthUserProfile(context.Background(), int64(1), &entity.User{ProfilePic: "javascript:alert(1)"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "validation failed")
+		assert.Contains(t, err.Error(), "profile_pic")
+	})
 }
 
 func TestAuthUseCase_RegisterUser_WithOnboarding(t *testing.T) {

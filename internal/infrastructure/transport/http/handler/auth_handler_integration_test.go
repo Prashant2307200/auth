@@ -194,7 +194,7 @@ func TestAuthHandler_DeleteProfile_Success(t *testing.T) {
 	rr := httptest.NewRecorder()
 	h.deleteProfile(rr, req)
 
-	require.Equal(t, http.StatusOK, rr.Code)
+	require.Equal(t, http.StatusNoContent, rr.Code)
 	mockUser.AssertExpectations(t)
 }
 

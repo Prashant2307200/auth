@@ -217,3 +217,27 @@ func TestAuthHandler_UpdateProfile_JSONWithProfilePic(t *testing.T) {
 	require.Equal(t, http.StatusOK, rr.Code)
 	mockUser.AssertExpectations(t)
 }
+
+func TestAuthHandler_UpdateProfile_InvalidProfilePic(t *testing.T) {
+	mockUser := &testutil.MockUserRepo{}
+	mockBusiness := &testutil.MockBusinessRepo{}
+	mockToken := &testutil.MockTokenService{}
+	mockCloud := &testutil.MockCloudService{}
+	mockUser.On("GetById", mock.Anything, int64(1)).Return(testutil.CreateTestUserWithID(1), nil)
+	uc := usecase.NewAuthUseCase(mockUser, mockBusiness, mockToken, mockCloud)
+	h := NewAuthHandler(uc, "dev")
+
+	body := `{"profile_pic":"javascript:alert(1)"}`
+	req := httptest.NewRequest(http.MethodPut, "/profile/", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(middleware.WithUserID(req.Context(), 1))
+	rr := httptest.NewRecorder()
+	h.updateProfile(rr, req)
+
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+	var got map[string]any
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&got))
+	_, ok := got["errors"]
+	require.True(t, ok)
+	mockUser.AssertExpectations(t)
+}

@@ -92,6 +92,7 @@ func TestTeamHandler_UpdateMemberRole_Success(t *testing.T) {
 	h := NewTeamHandler(mockTeam, func(next http.Handler) http.Handler { return next })
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/team/members/7/role", bytes.NewReader([]byte(`{"role":3}`)))
+	req.SetPathValue("id", "7")
 	req = middleware.WithTenantID(req, 66)
 	rr := httptest.NewRecorder()
 	h.updateMemberRole(rr, req)
@@ -106,7 +107,8 @@ func TestTeamHandler_RemoveMember_Success(t *testing.T) {
 
 	h := NewTeamHandler(mockTeam, func(next http.Handler) http.Handler { return next })
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/team/9", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/team/members/9", nil)
+	req.SetPathValue("id", "9")
 	req = middleware.WithTenantID(req, 77)
 	rr := httptest.NewRecorder()
 	h.removeMember(rr, req)

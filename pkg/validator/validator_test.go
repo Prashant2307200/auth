@@ -56,3 +56,25 @@ func TestValidatePhoneNumber(t *testing.T) {
 		t.Fatalf("expected invalid phone")
 	}
 }
+
+func TestValidateProfilePicURL(t *testing.T) {
+	ok, err := ValidateProfilePicURL("")
+	if !ok || err != nil {
+		t.Fatalf("expected empty profile pic to be valid, got %v", err)
+	}
+
+	ok, err = ValidateProfilePicURL("https://res.cloudinary.com/demo/image/upload/v1/pic.jpg")
+	if !ok || err != nil {
+		t.Fatalf("expected valid profile pic url, got %v", err)
+	}
+
+	ok, _ = ValidateProfilePicURL("javascript:alert(1)")
+	if ok {
+		t.Fatalf("expected invalid profile pic url scheme")
+	}
+
+	ok, _ = ValidateProfilePicURL("not-a-url")
+	if ok {
+		t.Fatalf("expected invalid profile pic url format")
+	}
+}

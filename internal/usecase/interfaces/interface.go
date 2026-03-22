@@ -10,9 +10,14 @@ type UserRepo interface {
 	List(ctx context.Context) ([]*entity.User, error)
 	GetById(ctx context.Context, id int64) (*entity.User, error)
 	GetByEmail(ctx context.Context, email string) (*entity.User, error)
+	GetByGoogleID(ctx context.Context, googleID string) (*entity.User, error)
 	UpdateById(ctx context.Context, id int64, user *entity.User) error
 	// UpdatePassword updates only the stored password hash for a user
 	UpdatePassword(ctx context.Context, id int64, hashedPassword string) error
+	// MarkEmailVerified sets email_verified = true and email_verified_at = NOW()
+	MarkEmailVerified(ctx context.Context, id int64) error
+	// LinkGoogleID associates a Google account with the user
+	LinkGoogleID(ctx context.Context, id int64, googleID string) error
 	DeleteById(ctx context.Context, id int64) error
 	Create(ctx context.Context, user *entity.User) (int64, error)
 	Search(ctx context.Context, currentID int64, search string) ([]*entity.User, error)

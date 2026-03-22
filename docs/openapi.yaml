@@ -2,6 +2,8 @@ openapi: '3.1.0'
 info:
   title: Auth Service API
   description: |
+    **DEPRECATED:** Canonical OpenAPI spec is `api/openapi.yaml` in the repository root. This file is kept for extended narrative and reference only; do not treat it as the single source of truth for CI or client generation.
+
     Authentication, user management, business multi-tenancy, and team management microservice.
 
     ## Authentication

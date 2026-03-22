@@ -77,9 +77,6 @@ func TestE2E_ExpiredInviteCannotBeAccepted(t *testing.T) {
 func TestE2E_MultipleUsersMultipleBusinesses(t *testing.T) {
 	memberRepo := new(testutil.MockMemberRepo)
 	auditRepo := new(testutil.MockAuditRepo)
-	var emailSvc interface {
-		SendInvite(context.Context, string, string) error
-	}
 	tokenGen := invitetoken.NewGenerator("e2e-secret", 24)
 
 	// two members created in different businesses
@@ -89,7 +86,7 @@ func TestE2E_MultipleUsersMultipleBusinesses(t *testing.T) {
 	memberRepo.On("ListByBusiness", mock.Anything, int64(1)).Return([]*entity.BusinessMember{member1}, nil)
 	memberRepo.On("ListByBusiness", mock.Anything, int64(2)).Return([]*entity.BusinessMember{member2}, nil)
 
-	uc := NewTeamUsecase(memberRepo, auditRepo, emailSvc, tokenGen)
+	uc := NewTeamUsecase(memberRepo, auditRepo, nil, tokenGen)
 	l1, err := uc.ListMembers(context.Background(), 1)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(l1))

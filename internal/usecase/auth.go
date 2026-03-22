@@ -51,6 +51,9 @@ func (uc *AuthUseCase) RegisterUser(ctx context.Context, user *entity.User, opts
 	if ok, err := v.ValidateUsername(user.Username); !ok {
 		ves = append(ves, v.ValidationError{Field: "username", Message: err.Error()})
 	}
+	if ok, err := v.ValidateProfilePicURL(user.ProfilePic); !ok {
+		ves = append(ves, v.ValidationError{Field: "profile_pic", Message: err.Error()})
+	}
 	if len(ves) > 0 {
 		return "", "", fmt.Errorf("validation failed: %w", ves)
 	}
@@ -245,10 +248,22 @@ func (uc *AuthUseCase) GetAuthUserProfile(ctx context.Context, authUserId int64)
 }
 
 func (uc *AuthUseCase) UpdateAuthUserProfile(ctx context.Context, authUserId int64, user *entity.User) error {
+	if ok, err := v.ValidateProfilePicURL(user.ProfilePic); !ok {
+		return fmt.Errorf("validation failed: %w", v.ValidationErrors{{Field: "profile_pic", Message: err.Error()}})
+	}
 
 	err := uc.UserRepo.UpdateById(ctx, authUserId, user)
 	if err != nil {
 		return fmt.Errorf("failed to update user profile: %w", err)
+	}
+
+	return nil
+}
+
+func (uc *AuthUseCase) DeleteAuthUser(ctx context.Context, authUserId int64) error {
+	err := uc.UserRepo.DeleteById(ctx, authUserId)
+	if err != nil {
+		return fmt.Errorf("failed to delete user profile: %w", err)
 	}
 
 	return nil

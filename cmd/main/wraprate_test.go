@@ -40,3 +40,58 @@ func TestWrapRateLimitedRoutes_PrefixMatch_DeniesWhenExceeded(t *testing.T) {
 		t.Fatalf("expected second request to be rate-limited, got %d", w2.Code)
 	}
 }
+
+func TestWrapRateLimitedRoutes_Table(t *testing.T) {
+	cases := []struct {
+		name       string
+		rateLimit  *ratelimit.RateLimiter
+		routes     []string
+		url        string
+		remoteAddr string
+		expectOK   bool
+	}{
+		{
+			name:      "allow_on_prefix_match",
+			rateLimit: ratelimit.NewRateLimiter(1000, 10),
+			routes:    []string{"/register/", "/login/"},
+			url:       "/register/foo",
+			expectOK:  true,
+		},
+		{
+			name:       "deny_when_exceeded_exact",
+			rateLimit:  ratelimit.NewRateLimiter(0, 0),
+			routes:     []string{"/register/"},
+			url:        "/register/",
+			remoteAddr: "2.2.2.2:1234",
+			expectOK:   false,
+		},
+		{
+			name:      "non_matching_path_passes_through",
+			rateLimit: ratelimit.NewRateLimiter(0, 0),
+			routes:    []string{"/register/"},
+			url:       "/health",
+			expectOK:  true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := wrapRateLimitedRoutes(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}), tc.rateLimit, tc.routes)
+
+			req := httptest.NewRequest("GET", tc.url, nil)
+			if tc.remoteAddr != "" {
+				req.RemoteAddr = tc.remoteAddr
+			}
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+			if tc.expectOK && w.Code != http.StatusOK {
+				t.Fatalf("expected OK for %s, got %d", tc.name, w.Code)
+			}
+			if !tc.expectOK && w.Code == http.StatusOK {
+				t.Fatalf("expected rate-limited for %s, got %d", tc.name, w.Code)
+			}
+		})
+	}
+}

@@ -10,6 +10,7 @@ import (
 )
 
 type TokenService struct {
+	authgrpc.UnimplementedTokenServiceServer
 	jwtService interfaces.TokenService
 	userRepo   interfaces.UserRepo
 }
@@ -29,7 +30,7 @@ func roleNameFromUser(u *entity.User) string {
 }
 
 func (s *TokenService) VerifyToken(ctx context.Context, req *authgrpc.VerifyTokenRequest) (*authgrpc.VerifyTokenResponse, error) {
-	userID, err := s.jwtService.VerifyToken(ctx, req.Token)
+	userID, err := s.jwtService.VerifyToken(ctx, req.GetToken())
 	if err != nil {
 		return nil, fmt.Errorf("token verification failed: %w", err)
 	}
@@ -39,8 +40,8 @@ func (s *TokenService) VerifyToken(ctx context.Context, req *authgrpc.VerifyToke
 		return nil, fmt.Errorf("failed to fetch user: %w", err)
 	}
 
-	if req.TenantId != 0 && user.TenantID != req.TenantId {
-		return nil, fmt.Errorf("tenant mismatch: token tenant %d != requested %d", user.TenantID, req.TenantId)
+	if tid := req.GetTenantId(); tid != 0 && user.TenantID != tid {
+		return nil, fmt.Errorf("tenant mismatch: token tenant %d != requested %d", user.TenantID, tid)
 	}
 
 	return &authgrpc.VerifyTokenResponse{UserId: userID, Role: roleNameFromUser(user)}, nil

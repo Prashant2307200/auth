@@ -16,6 +16,7 @@ type cachedKey struct {
 }
 
 type PublicKeyService struct {
+	authgrpc.UnimplementedPublicKeyServiceServer
 	businessRepo interfaces.BusinessRepo
 	mu           sync.RWMutex
 	cache        map[int64]cachedKey
@@ -27,8 +28,9 @@ func NewPublicKeyService(businessRepo interfaces.BusinessRepo) *PublicKeyService
 }
 
 func (s *PublicKeyService) GetPublicKey(ctx context.Context, req *authgrpc.GetPublicKeyRequest) (*authgrpc.GetPublicKeyResponse, error) {
+	bid := req.GetBusinessId()
 	s.mu.RLock()
-	if v, ok := s.cache[req.BusinessId]; ok {
+	if v, ok := s.cache[bid]; ok {
 		if time.Since(v.createdAt) < s.ttl {
 			s.mu.RUnlock()
 			return &authgrpc.GetPublicKeyResponse{PemKey: v.key, CreatedAt: v.createdAt.Format(time.RFC3339)}, nil
@@ -36,7 +38,7 @@ func (s *PublicKeyService) GetPublicKey(ctx context.Context, req *authgrpc.GetPu
 	}
 	s.mu.RUnlock()
 
-	b, err := s.businessRepo.GetById(ctx, req.BusinessId)
+	b, err := s.businessRepo.GetById(ctx, bid)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch business: %w", err)
 	}
@@ -44,7 +46,7 @@ func (s *PublicKeyService) GetPublicKey(ctx context.Context, req *authgrpc.GetPu
 	pem := b.PublicKey
 
 	s.mu.Lock()
-	s.cache[req.BusinessId] = cachedKey{key: pem, createdAt: time.Now()}
+	s.cache[bid] = cachedKey{key: pem, createdAt: time.Now()}
 	s.mu.Unlock()
 
 	return &authgrpc.GetPublicKeyResponse{PemKey: pem, CreatedAt: time.Now().Format(time.RFC3339)}, nil

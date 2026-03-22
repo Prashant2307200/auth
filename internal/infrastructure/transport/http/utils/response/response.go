@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	httputils "github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/utils"
 	"github.com/Prashant2307200/auth-service/internal/utils"
 	"github.com/Prashant2307200/auth-service/pkg/db"
 	"github.com/go-playground/validator"
@@ -16,8 +17,8 @@ import (
 var validate = validator.New()
 
 type Response struct {
-	Status string `json:"status"`
-	Error  string `json:"error"`
+	Status  string `json:"status"`
+	Message string `json:"message"`
 }
 
 const (
@@ -34,8 +35,8 @@ func WriteJson(w http.ResponseWriter, status int, data interface{}) error {
 
 func GeneralError(err error) Response {
 	return Response{
-		Status: StatusError,
-		Error:  SafeClientMessage(err),
+		Status:  StatusError,
+		Message: SafeClientMessage(err),
 	}
 }
 
@@ -79,9 +80,58 @@ func SafeClientMessage(err error) string {
 
 func GeneralMessage(message string) Response {
 	return Response{
-		Status: StatusOK,
-		Error:  message,
+		Status:  StatusOK,
+		Message: message,
 	}
+}
+
+func ErrorCodeFromStatus(status int) httputils.ErrorCode {
+	switch status {
+	case http.StatusBadRequest:
+		return httputils.BAD_REQUEST
+	case http.StatusUnauthorized:
+		return httputils.UNAUTHORIZED
+	case http.StatusForbidden:
+		return httputils.FORBIDDEN
+	case http.StatusNotFound:
+		return httputils.NOT_FOUND
+	case http.StatusConflict:
+		return httputils.CONFLICT
+	case http.StatusTooManyRequests:
+		return httputils.RATE_LIMITED
+	default:
+		return httputils.INTERNAL_ERROR
+	}
+}
+
+func MessageFromStatus(status int) string {
+	switch status {
+	case http.StatusBadRequest:
+		return "invalid input"
+	case http.StatusUnauthorized:
+		return "authentication required"
+	case http.StatusForbidden:
+		return "forbidden"
+	case http.StatusNotFound:
+		return "resource not found"
+	case http.StatusTooManyRequests:
+		return "rate limit exceeded"
+	default:
+		return "internal error"
+	}
+}
+
+func WriteError(w http.ResponseWriter, status int, err error) {
+	message := MessageFromStatus(status)
+	if err != nil && status != http.StatusInternalServerError {
+		message = err.Error()
+	}
+	httputils.SendErrorResponse(w, status, ErrorCodeFromStatus(status), message)
+}
+
+func WriteDomainError(w http.ResponseWriter, err error) {
+	status := ErrorToStatus(err)
+	WriteError(w, status, err)
 }
 
 // SuccessResponse represents a successful API response

@@ -38,7 +38,8 @@ func TestTeamHandler_InviteUser_InvalidRole(t *testing.T) {
 
 func TestTeamHandler_UpdateMemberRole_InvalidID(t *testing.T) {
 	handler := NewTeamHandler(&mockTeamUC{}, nil)
-	httpReq := httptest.NewRequest(http.MethodPatch, "/api/v1/team/members/invalid-id/role", bytes.NewReader([]byte(`{"role":2}`)))
+	httpReq := httptest.NewRequest(http.MethodPatch, "/team/members/invalid-id/role", bytes.NewReader([]byte(`{"role":2}`)))
+	httpReq.SetPathValue("id", "invalid-id")
 	w := httptest.NewRecorder()
 	handler.updateMemberRole(w, httpReq)
 	assert.Equal(t, http.StatusBadRequest, w.Code)

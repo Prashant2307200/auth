@@ -12,6 +12,8 @@
 
 RSA key pair required at `keys/private.pem` and `keys/public.pem` (relative to working directory).
 
+Example configs: `config/local.yaml.example` (copy to `config/local.yaml`), `config/docker.yaml` (used by `compose.yaml`).
+
 Generate keys:
 ```bash
 openssl genrsa -out keys/private.pem 2048
@@ -43,9 +45,9 @@ All secrets **must** be set via environment variables (they override YAML values
 | `REDIS_ADDRESS` | Yes | Redis host:port | `localhost:6379` |
 | `REDIS_USERNAME` | Yes | Redis username (empty if none) | `` |
 | `REDIS_PASSWORD` | Yes | Redis password (empty if none) | `` |
-| `ACCESS_TOKEN_SECRET` | Yes | Secret for access token signing | `<random-64-byte-base64>` |
-| `REFRESH_TOKEN_SECRET` | Yes | Secret for refresh token signing | `<random-64-byte-base64>` |
-| `COOKIE_SECRET` | Yes | Secret for cookie signing | `<random-64-byte-base64>` |
+| `REFRESH_TOKEN_SECRET` | Yes | Secret for refresh token signing (HS256) | `<random-64-byte-base64>` |
+| `ACCESS_TOKEN_SECRET` | No | Unused today (access JWT uses RSA keys); optional in YAML | — |
+| `COOKIE_SECRET` | No | Reserved for signed cookies; optional in YAML | — |
 | `NAME` | Yes | Cloudinary cloud name | `my-cloud` |
 | `API_KEY` | Yes | Cloudinary API key | `123456789012345` |
 | `API_SECRET` | Yes | Cloudinary API secret | `<cloudinary-secret>` |
@@ -65,7 +67,7 @@ openssl rand -base64 64
 
 ### Start infrastructure
 ```bash
-docker-compose up -d postgres redis
+docker compose -f compose.yaml up -d postgres redis
 ```
 
 ### Run the service
@@ -167,6 +169,7 @@ Starts: PostgreSQL 15, Redis 7, MailHog (SMTP dev), and the app on `:8080`.
 | `/api/v1/auth/*` | No | No |
 | `/api/v1/users/*` | Yes | No |
 | `/api/v1/business/*` | Yes | No |
+| `/api/v1/team/*` | Yes | No | Requires `X-Tenant-ID` (business ID) |
 | `/health`, `/health/live`, `/health/ready` | No | No |
 | `/metrics` | No | No |
 
@@ -177,8 +180,8 @@ Starts: PostgreSQL 15, Redis 7, MailHog (SMTP dev), and the app on `:8080`.
 ### Health endpoints
 ```bash
 GET /health          # application-level health
-GET /health/live     # liveness: always 200 if process is up
-GET /health/ready    # readiness: checks DB + Redis connectivity
+GET /health/live     # liveness: 200 if DB ping OK, else 503
+GET /health/ready    # readiness: JSON status; **503** if DB or Redis down (Kubernetes-ready)
 ```
 
 ### Prometheus metrics

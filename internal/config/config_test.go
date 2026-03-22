@@ -35,3 +35,26 @@ func TestRedisEnvRequired_SucceedsWhenSet(t *testing.T) {
 		t.Fatalf("expected no error when REDIS_* env vars are set, got: %v", err)
 	}
 }
+
+func TestMissingRequiredEnvVars(t *testing.T) {
+	t.Run("returns missing vars", func(t *testing.T) {
+		os.Setenv("CFG_TEST_PRESENT", "1")
+		defer os.Unsetenv("CFG_TEST_PRESENT")
+		missing := missingRequiredEnvVars([]string{"CFG_TEST_PRESENT", "CFG_TEST_MISSING"})
+		if len(missing) != 1 || missing[0] != "CFG_TEST_MISSING" {
+			t.Fatalf("expected CFG_TEST_MISSING, got %v", missing)
+		}
+	})
+
+	t.Run("returns none when all present", func(t *testing.T) {
+		os.Setenv("CFG_TEST_PRESENT_A", "1")
+		defer os.Unsetenv("CFG_TEST_PRESENT_A")
+		os.Setenv("CFG_TEST_PRESENT_B", "1")
+		defer os.Unsetenv("CFG_TEST_PRESENT_B")
+
+		missing := missingRequiredEnvVars([]string{"CFG_TEST_PRESENT_A", "CFG_TEST_PRESENT_B"})
+		if len(missing) != 0 {
+			t.Fatalf("expected no missing vars, got %v", missing)
+		}
+	})
+}

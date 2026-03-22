@@ -33,14 +33,14 @@ func (h *UserHandler) getAll(w http.ResponseWriter, r *http.Request) {
 	currentUserID, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
 		slog.Error("Failed to get user ID from context", slog.Any("error", err))
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(err))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 
 	users, err := h.UC.GetUsers(r.Context(), currentUserID)
 	if err != nil {
 		slog.Error("failed to get users", slog.Any("error", err))
-		response.WriteJson(w, response.ErrorToStatus(err), response.GeneralError(err))
+		response.WriteDomainError(w, err)
 		return
 	}
 
@@ -54,14 +54,14 @@ func (h *UserHandler) searchAll(w http.ResponseWriter, r *http.Request) {
 	id, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
 		slog.Error("Failed to get user ID from context", slog.Any("error", err))
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(errors.New("authentication required")))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 
 	users, err := h.UC.SearchUsers(r.Context(), id, search)
 	if err != nil {
 		slog.Error("failed to get users", slog.Any("error", err))
-		response.WriteJson(w, http.StatusInternalServerError, response.GeneralError(err))
+		response.WriteError(w, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -72,21 +72,21 @@ func (h *UserHandler) deleteById(w http.ResponseWriter, r *http.Request) {
 	currentUserID, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
 		slog.Error("Failed to get user ID from context", slog.Any("error", err))
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(err))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 
 	id, err := request.ParseId(r)
 	if err != nil {
 		slog.Error("failed to parse id", slog.Any("error", err))
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 
 	err = h.UC.DeleteUserById(r.Context(), currentUserID, id)
 	if err != nil {
 		slog.Error("failed to delete user", slog.Any("error", err))
-		response.WriteJson(w, response.ErrorToStatus(err), response.GeneralError(err))
+		response.WriteDomainError(w, err)
 		return
 	}
 
@@ -97,21 +97,21 @@ func (h *UserHandler) updateById(w http.ResponseWriter, r *http.Request) {
 	currentUserID, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
 		slog.Error("Failed to get user ID from context", slog.Any("error", err))
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(err))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 
 	id, err := request.ParseId(r)
 	if err != nil {
 		slog.Error("failed to parse id", slog.Any("error", err))
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 
 	user, err := request.ParseJSON[entity.User](r)
 	if err != nil {
 		slog.Error("failed to parse json", slog.Any("error", err))
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 
@@ -125,7 +125,7 @@ func (h *UserHandler) updateById(w http.ResponseWriter, r *http.Request) {
 	err = h.UC.UpdateUserById(r.Context(), currentUserID, id, user)
 	if err != nil {
 		slog.Error("failed to update user", slog.Any("error", err))
-		response.WriteJson(w, response.ErrorToStatus(err), response.GeneralError(err))
+		response.WriteDomainError(w, err)
 		return
 	}
 
@@ -136,21 +136,21 @@ func (h *UserHandler) create(w http.ResponseWriter, r *http.Request) {
 	currentUserID, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
 		slog.Error("Failed to get user ID from context", slog.Any("error", err))
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(err))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 
 	user, err := request.ParseJSON[entity.User](r)
 	if err != nil {
 		slog.Error("failed to parse json", slog.Any("error", err))
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 
 	err = h.UC.CreateUser(r.Context(), currentUserID, user)
 	if err != nil {
 		slog.Error("failed to create user", slog.Any("error", err))
-		response.WriteJson(w, response.ErrorToStatus(err), response.GeneralError(err))
+		response.WriteDomainError(w, err)
 		return
 	}
 
@@ -161,21 +161,21 @@ func (h *UserHandler) getById(w http.ResponseWriter, r *http.Request) {
 	currentUserID, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
 		slog.Error("Failed to get user ID from context", slog.Any("error", err))
-		response.WriteJson(w, http.StatusUnauthorized, response.GeneralError(err))
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 
 	id, err := request.ParseId(r)
 	if err != nil {
 		slog.Error("failed to parse id", slog.Any("error", err))
-		response.WriteJson(w, http.StatusBadRequest, response.GeneralError(err))
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 
 	user, err := h.UC.GetUserById(r.Context(), currentUserID, id)
 	if err != nil {
 		slog.Error("failed to get user", slog.Any("error", err))
-		response.WriteJson(w, response.ErrorToStatus(err), response.GeneralError(err))
+		response.WriteDomainError(w, err)
 		return
 	}
 

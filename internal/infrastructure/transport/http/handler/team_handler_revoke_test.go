@@ -19,6 +19,7 @@ func TestRevokeInvitation_Handler_Success(t *testing.T) {
 	handler := &TeamHandler{UC: ucMock, AMW: func(h http.Handler) http.Handler { return h }}
 
 	req := httptest.NewRequest("POST", "/api/v1/team/invites/valid-token/revoke", nil)
+	req.SetPathValue("token", "valid-token")
 	w := httptest.NewRecorder()
 
 	handler.revokeInvitation(w, req)
@@ -39,11 +40,13 @@ func TestRevokeInvitation_Handler_NotFound(t *testing.T) {
 	handler := &TeamHandler{UC: ucMock, AMW: func(h http.Handler) http.Handler { return h }}
 
 	req := httptest.NewRequest("POST", "/api/v1/team/invites/nonexistent/revoke", nil)
+	req.SetPathValue("token", "nonexistent")
 	w := httptest.NewRecorder()
 
 	handler.revokeInvitation(w, req)
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
+	ucMock.AssertExpectations(t)
 }
 
 func TestRevokeInvitation_Handler_AlreadyAccepted(t *testing.T) {
@@ -53,6 +56,7 @@ func TestRevokeInvitation_Handler_AlreadyAccepted(t *testing.T) {
 	handler := &TeamHandler{UC: ucMock, AMW: func(h http.Handler) http.Handler { return h }}
 
 	req := httptest.NewRequest("POST", "/api/v1/team/invites/accepted-token/revoke", nil)
+	req.SetPathValue("token", "accepted-token")
 	w := httptest.NewRecorder()
 
 	handler.revokeInvitation(w, req)

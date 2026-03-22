@@ -71,6 +71,24 @@ func (m *MockUserRepo) Search(ctx context.Context, currentID int64, search strin
 	return args.Get(0).([]*entity.User), args.Error(1)
 }
 
+func (m *MockUserRepo) GetByGoogleID(ctx context.Context, googleID string) (*entity.User, error) {
+	args := m.Called(ctx, googleID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*entity.User), args.Error(1)
+}
+
+func (m *MockUserRepo) MarkEmailVerified(ctx context.Context, id int64) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+func (m *MockUserRepo) LinkGoogleID(ctx context.Context, id int64, googleID string) error {
+	args := m.Called(ctx, id, googleID)
+	return args.Error(0)
+}
+
 // MockTokenService is a mock implementation of TokenService interface
 type MockTokenService struct {
 	mock.Mock
@@ -215,6 +233,13 @@ func (m *MockAuditRepo) ListByBusiness(ctx context.Context, businessID int64, li
 }
 func (m *MockAuditRepo) ListByUser(ctx context.Context, businessID, userID int64, limit, offset int) ([]*entity.AuditLog, error) {
 	args := m.Called(ctx, businessID, userID, limit, offset)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*entity.AuditLog), args.Error(1)
+}
+func (m *MockAuditRepo) ListWithFilter(ctx context.Context, businessID int64, userID *int64, action, fromTime, toTime string, limit, offset int) ([]*entity.AuditLog, error) {
+	args := m.Called(ctx, businessID, userID, action, fromTime, toTime, limit, offset)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -396,6 +421,16 @@ type MockEmailService struct {
 }
 
 func (m *MockEmailService) SendInvite(ctx context.Context, to string, token string) error {
+	args := m.Called(ctx, to, token)
+	return args.Error(0)
+}
+
+func (m *MockEmailService) SendPasswordReset(ctx context.Context, to string, token string) error {
+	args := m.Called(ctx, to, token)
+	return args.Error(0)
+}
+
+func (m *MockEmailService) SendEmailVerification(ctx context.Context, to string, token string) error {
 	args := m.Called(ctx, to, token)
 	return args.Error(0)
 }

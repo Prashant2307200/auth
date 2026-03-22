@@ -1,3 +1,8 @@
+# DEPRECATED: This stack uses legacy env vars (DATABASE_URL, etc.) and does not match
+# current config (POSTGRES_URI, Cloudinary, etc.). Use compose.yaml instead:
+#   docker compose -f compose.yaml up -d
+#
+# Kept only for historical reference; remove or rewrite before relying on it.
 version: "3.8"
 services:
   postgres:
@@ -29,16 +34,3 @@ services:
     ports:
       - "1025:1025"
       - "8025:8025"
-
-  app:
-    build: .
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    environment:
-      - DATABASE_URL=postgres://chatty:chatty@postgres:5432/chatty?sslmode=disable
-      - REDIS_URL=redis://redis:6379
-    ports:
-      - "8080:8080"

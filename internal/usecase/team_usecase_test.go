@@ -15,14 +15,11 @@ import (
 func TestTeamUsecase_ListMembers(t *testing.T) {
 	memberRepo := new(testutil.MockMemberRepo)
 	auditRepo := new(testutil.MockAuditRepo)
-	var emailSvc interface {
-		SendInvite(context.Context, string, string) error
-	}
 
 	members := []*entity.BusinessMember{{ID: 1, BusinessID: 10, Email: "a@x.com", Status: entity.MemberStatusActive}}
 	memberRepo.On("ListByBusiness", mock.Anything, int64(10)).Return(members, nil)
 
-	uc := NewTeamUsecase(memberRepo, auditRepo, emailSvc, invitetoken.NewGenerator("test-secret", 24))
+	uc := NewTeamUsecase(memberRepo, auditRepo, nil, invitetoken.NewGenerator("test-secret", 24))
 	res, err := uc.ListMembers(context.Background(), 10)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(res))
@@ -33,9 +30,6 @@ func TestTeamUsecase_ListMembers(t *testing.T) {
 func TestTeamUsecase_AcceptInvitation_Success(t *testing.T) {
 	memberRepo := new(testutil.MockMemberRepo)
 	auditRepo := new(testutil.MockAuditRepo)
-	var emailSvc interface {
-		SendInvite(context.Context, string, string) error
-	}
 
 	tokenGen := invitetoken.NewGenerator("test-secret", 24)
 	token, _, _ := tokenGen.Generate(5, 10, "newmember@example.com")
@@ -58,7 +52,7 @@ func TestTeamUsecase_AcceptInvitation_Success(t *testing.T) {
 		return a.BusinessID == 10 && a.Action == "accept_invitation"
 	})).Return(nil)
 
-	uc := NewTeamUsecase(memberRepo, auditRepo, emailSvc, tokenGen)
+	uc := NewTeamUsecase(memberRepo, auditRepo, nil, tokenGen)
 	err := uc.AcceptInvitation(context.Background(), token)
 	assert.NoError(t, err)
 
@@ -69,11 +63,8 @@ func TestTeamUsecase_AcceptInvitation_Success(t *testing.T) {
 func TestTeamUsecase_AcceptInvitation_InvalidToken(t *testing.T) {
 	memberRepo := new(testutil.MockMemberRepo)
 	auditRepo := new(testutil.MockAuditRepo)
-	var emailSvc interface {
-		SendInvite(context.Context, string, string) error
-	}
 
-	uc := NewTeamUsecase(memberRepo, auditRepo, emailSvc, invitetoken.NewGenerator("test-secret", 24))
+	uc := NewTeamUsecase(memberRepo, auditRepo, nil, invitetoken.NewGenerator("test-secret", 24))
 	err := uc.AcceptInvitation(context.Background(), "invalid-token-xyz")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid or expired")
@@ -82,9 +73,6 @@ func TestTeamUsecase_AcceptInvitation_InvalidToken(t *testing.T) {
 func TestTeamUsecase_AcceptInvitation_NotPending(t *testing.T) {
 	memberRepo := new(testutil.MockMemberRepo)
 	auditRepo := new(testutil.MockAuditRepo)
-	var emailSvc interface {
-		SendInvite(context.Context, string, string) error
-	}
 
 	tokenGen := invitetoken.NewGenerator("test-secret", 24)
 	token, _, _ := tokenGen.Generate(5, 10, "existing@example.com")
@@ -100,7 +88,7 @@ func TestTeamUsecase_AcceptInvitation_NotPending(t *testing.T) {
 
 	memberRepo.On("GetByInviteToken", mock.Anything, token).Return(member, nil)
 
-	uc := NewTeamUsecase(memberRepo, auditRepo, emailSvc, tokenGen)
+	uc := NewTeamUsecase(memberRepo, auditRepo, nil, tokenGen)
 	err := uc.AcceptInvitation(context.Background(), token)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invitation is not pending")
@@ -111,15 +99,12 @@ func TestTeamUsecase_AcceptInvitation_NotPending(t *testing.T) {
 func TestTeamUsecase_AcceptInvitation_MemberNotFound(t *testing.T) {
 	memberRepo := new(testutil.MockMemberRepo)
 	auditRepo := new(testutil.MockAuditRepo)
-	var emailSvc interface {
-		SendInvite(context.Context, string, string) error
-	}
 
 	tokenGen := invitetoken.NewGenerator("test-secret", 24)
 	fakeToken, _, _ := tokenGen.Generate(99, 10, "noone@example.com")
 	memberRepo.On("GetByInviteToken", mock.Anything, fakeToken).Return(nil, assert.AnError)
 
-	uc := NewTeamUsecase(memberRepo, auditRepo, emailSvc, tokenGen)
+	uc := NewTeamUsecase(memberRepo, auditRepo, nil, tokenGen)
 	err := uc.AcceptInvitation(context.Background(), fakeToken)
 	assert.Error(t, err)
 
@@ -129,9 +114,6 @@ func TestTeamUsecase_AcceptInvitation_MemberNotFound(t *testing.T) {
 func TestTeamUsecase_AcceptInvitation_WithMemberPrefix(t *testing.T) {
 	memberRepo := new(testutil.MockMemberRepo)
 	auditRepo := new(testutil.MockAuditRepo)
-	var emailSvc interface {
-		SendInvite(context.Context, string, string) error
-	}
 
 	tokenGen := invitetoken.NewGenerator("test-secret", 24)
 	token, _, _ := tokenGen.Generate(7, 10, "newmember@example.com")
@@ -153,7 +135,7 @@ func TestTeamUsecase_AcceptInvitation_WithMemberPrefix(t *testing.T) {
 		return a.BusinessID == 10 && a.Action == "accept_invitation"
 	})).Return(nil)
 
-	uc := NewTeamUsecase(memberRepo, auditRepo, emailSvc, tokenGen)
+	uc := NewTeamUsecase(memberRepo, auditRepo, nil, tokenGen)
 	err := uc.AcceptInvitation(context.Background(), token)
 	assert.NoError(t, err)
 
@@ -163,15 +145,12 @@ func TestTeamUsecase_AcceptInvitation_WithMemberPrefix(t *testing.T) {
 func TestTeamUsecase_RemoveMember_CrossBusinessProtection(t *testing.T) {
 	memberRepo := new(testutil.MockMemberRepo)
 	auditRepo := new(testutil.MockAuditRepo)
-	var emailSvc interface {
-		SendInvite(context.Context, string, string) error
-	}
 
 	// member belongs to business 10 but we'll attempt to delete under business 99
 	member := &entity.BusinessMember{ID: 55, BusinessID: 10, Email: "x@x.com", Status: entity.MemberStatusActive}
 	memberRepo.On("GetByID", mock.Anything, int64(55)).Return(member, nil)
 
-	uc := NewTeamUsecase(memberRepo, auditRepo, emailSvc, invitetoken.NewGenerator("test-secret", 24))
+	uc := NewTeamUsecase(memberRepo, auditRepo, nil, invitetoken.NewGenerator("test-secret", 24))
 	err := uc.RemoveMember(context.Background(), 99, 55)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "does not belong to business")

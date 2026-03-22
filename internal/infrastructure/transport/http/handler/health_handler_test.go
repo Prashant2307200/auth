@@ -30,7 +30,7 @@ func TestSystemHealthHandler_LiveReady(t *testing.T) {
 	w2 := httptest.NewRecorder()
 	h.Ready(w2, req2)
 	res2 := w2.Result()
-	require.Equal(t, http.StatusOK, res2.StatusCode)
+	require.Equal(t, http.StatusServiceUnavailable, res2.StatusCode)
 
 	// response body contains timestamp; simple smoke check
 	// read body

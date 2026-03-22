@@ -80,7 +80,11 @@ func (h *SystemHealthHandler) Ready(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	code := http.StatusOK
+	if st.Status != "healthy" {
+		code = http.StatusServiceUnavailable
+	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(st)
 }

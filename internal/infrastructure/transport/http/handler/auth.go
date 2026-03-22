@@ -8,7 +8,6 @@ import (
 	"github.com/Prashant2307200/auth-service/internal/entity"
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/dto"
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/middleware"
-	uutils "github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/utils"
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/utils/request"
 	"github.com/Prashant2307200/auth-service/internal/infrastructure/transport/http/utils/response"
 	"github.com/Prashant2307200/auth-service/internal/usecase"
@@ -41,20 +40,10 @@ func (h *AuthHandler) register(w http.ResponseWriter, r *http.Request) {
 	reqDto, err := request.ParseJSON[dto.RegisterRequest](r)
 	if err != nil {
 		slog.Error("Error parsing JSON", slog.Any("error", err))
-		uutils.SendErrorResponse(w, http.StatusBadRequest, uutils.BAD_REQUEST, err.Error())
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 
-	if err := middleware.ValidateRequest(reqDto); err != nil {
-		slog.Error("Error validating JSON", slog.Any("error", err))
-		// try to format into field errors
-		if errs := response.FormatValidationErrors(err); len(errs) > 0 {
-			response.WriteJson(w, http.StatusBadRequest, map[string]interface{}{"errors": errs})
-			return
-		}
-		uutils.SendErrorResponse(w, http.StatusBadRequest, uutils.BAD_REQUEST, err.Error())
-		return
-	}
 	user := &entity.User{
 		Username:   reqDto.Username,
 		Email:      reqDto.Email,
@@ -76,11 +65,7 @@ func (h *AuthHandler) register(w http.ResponseWriter, r *http.Request) {
 		}
 		slog.Error("Error registering user", slog.Any("error", err))
 		status := response.ErrorToStatus(err)
-		code := uutils.INTERNAL_ERROR
-		if status == http.StatusBadRequest {
-			code = uutils.BAD_REQUEST
-		}
-		uutils.SendErrorResponse(w, status, code, err.Error())
+		response.WriteError(w, status, err)
 		return
 	}
 
@@ -116,18 +101,7 @@ func (h *AuthHandler) login(w http.ResponseWriter, r *http.Request) {
 	loginDto, err := request.ParseJSON[dto.LoginRequest](r)
 	if err != nil {
 		slog.Error("Error parsing JSON", slog.Any("error", err))
-		uutils.SendErrorResponse(w, http.StatusBadRequest, uutils.BAD_REQUEST, err.Error())
-		return
-	}
-
-	if err = middleware.ValidateRequest(loginDto); err != nil {
-		slog.Error("Error validating JSON", slog.Any("error", err))
-		// if validator returned field errors, format them
-		if errs := response.FormatValidationErrors(err); len(errs) > 0 {
-			response.WriteJson(w, http.StatusBadRequest, map[string]interface{}{"errors": errs})
-			return
-		}
-		uutils.SendErrorResponse(w, http.StatusBadRequest, uutils.BAD_REQUEST, err.Error())
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 
@@ -141,7 +115,7 @@ func (h *AuthHandler) login(w http.ResponseWriter, r *http.Request) {
 		}
 		slog.Error("Error logging in user", slog.String("email", loginDto.Email), slog.Any("error", err))
 		// Don't expose whether user exists or password is wrong for security
-		uutils.SendErrorResponse(w, http.StatusUnauthorized, uutils.UNAUTHORIZED, "invalid email or password")
+		response.WriteError(w, http.StatusUnauthorized, errors.New("invalid email or password"))
 		return
 	}
 
@@ -154,7 +128,7 @@ func (h *AuthHandler) logout(w http.ResponseWriter, r *http.Request) {
 	id, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
 		slog.Error("Failed to get user ID from context", slog.Any("error", err))
-		uutils.SendErrorResponse(w, http.StatusUnauthorized, uutils.UNAUTHORIZED, "authentication required")
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 
@@ -162,11 +136,7 @@ func (h *AuthHandler) logout(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("Failed to logout user", slog.Int64("user_id", id), slog.Any("error", err))
 		status := response.ErrorToStatus(err)
-		code := uutils.INTERNAL_ERROR
-		if status == http.StatusUnauthorized {
-			code = uutils.UNAUTHORIZED
-		}
-		uutils.SendErrorResponse(w, status, code, err.Error())
+		response.WriteError(w, status, err)
 		return
 	}
 
@@ -178,7 +148,7 @@ func (h *AuthHandler) profile(w http.ResponseWriter, r *http.Request) {
 	id, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
 		slog.Error("Failed to get user ID from context", slog.Any("error", err))
-		uutils.SendErrorResponse(w, http.StatusUnauthorized, uutils.UNAUTHORIZED, "authentication required")
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 
@@ -186,11 +156,7 @@ func (h *AuthHandler) profile(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("Error getting user profile", slog.Any("error", err))
 		status := response.ErrorToStatus(err)
-		code := uutils.INTERNAL_ERROR
-		if status == http.StatusUnauthorized {
-			code = uutils.UNAUTHORIZED
-		}
-		uutils.SendErrorResponse(w, status, code, err.Error())
+		response.WriteError(w, status, err)
 		return
 	}
 
@@ -201,14 +167,14 @@ func (h *AuthHandler) updateProfile(w http.ResponseWriter, r *http.Request) {
 	id, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
 		slog.Error("Failed to get user ID from context", slog.Any("error", err))
-		uutils.SendErrorResponse(w, http.StatusUnauthorized, uutils.UNAUTHORIZED, "authentication required")
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 
 	req, err := request.ParseJSON[dto.ProfileUpdateRequest](r)
 	if err != nil {
 		slog.Error("Error parsing JSON", slog.Any("error", err))
-		uutils.SendErrorResponse(w, http.StatusBadRequest, uutils.BAD_REQUEST, err.Error())
+		response.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 
@@ -216,24 +182,20 @@ func (h *AuthHandler) updateProfile(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("Error getting user profile", slog.Any("error", err))
 		status := response.ErrorToStatus(err)
-		code := uutils.INTERNAL_ERROR
-		uutils.SendErrorResponse(w, status, code, err.Error())
+		response.WriteError(w, status, err)
 		return
 	}
 
 	user := mergeProfileUpdate(existing, req)
-	if err := response.ValidationError(user); err != nil {
-		uutils.SendErrorResponse(w, http.StatusBadRequest, uutils.BAD_REQUEST, err.Error())
-		return
-	}
 
 	if err := h.UC.UpdateAuthUserProfile(r.Context(), id, user); err != nil {
-		status := response.ErrorToStatus(err)
-		code := uutils.INTERNAL_ERROR
-		if status == http.StatusBadRequest {
-			code = uutils.BAD_REQUEST
+		var ves responseErrors
+		if unwrapValidationErrors(err, &ves) {
+			response.WriteJson(w, http.StatusBadRequest, map[string]interface{}{"errors": ves})
+			return
 		}
-		uutils.SendErrorResponse(w, status, code, err.Error())
+		status := response.ErrorToStatus(err)
+		response.WriteError(w, status, err)
 		return
 	}
 
@@ -266,7 +228,7 @@ func (h *AuthHandler) uploadSignature(w http.ResponseWriter, r *http.Request) {
 	id, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
 		slog.Error("Failed to get user ID from context", slog.Any("error", err))
-		uutils.SendErrorResponse(w, http.StatusUnauthorized, uutils.UNAUTHORIZED, "authentication required")
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 
@@ -274,8 +236,7 @@ func (h *AuthHandler) uploadSignature(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("Error generating upload signature", slog.Any("error", err))
 		status := response.ErrorToStatus(err)
-		code := uutils.INTERNAL_ERROR
-		uutils.SendErrorResponse(w, status, code, err.Error())
+		response.WriteError(w, status, err)
 		return
 	}
 
@@ -286,34 +247,30 @@ func (h *AuthHandler) deleteProfile(w http.ResponseWriter, r *http.Request) {
 	id, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
 		slog.Error("Failed to get user ID from context", slog.Any("error", err))
-		uutils.SendErrorResponse(w, http.StatusUnauthorized, uutils.UNAUTHORIZED, "authentication required")
+		response.WriteError(w, http.StatusUnauthorized, errors.New("authentication required"))
 		return
 	}
 
-	if err := h.UC.UserRepo.DeleteById(r.Context(), id); err != nil {
+	if err := h.UC.DeleteAuthUser(r.Context(), id); err != nil {
 		status := response.ErrorToStatus(err)
-		code := uutils.INTERNAL_ERROR
-		if status == http.StatusNotFound {
-			code = uutils.NOT_FOUND
-		}
-		uutils.SendErrorResponse(w, status, code, err.Error())
+		response.WriteError(w, status, err)
 		return
 	}
 
-	response.WriteSuccess(w, http.StatusOK, "user profile deleted successfully", nil)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *AuthHandler) refresh(w http.ResponseWriter, r *http.Request) {
 
 	refreshCookie, err := r.Cookie("refresh_token")
 	if err != nil {
-		uutils.SendErrorResponse(w, http.StatusUnauthorized, uutils.UNAUTHORIZED, "refresh token not found")
+		response.WriteError(w, http.StatusUnauthorized, errors.New("refresh token not found"))
 		return
 	}
 
 	refresh, access, err := h.UC.RefreshSession(r.Context(), refreshCookie.Value)
 	if err != nil {
-		uutils.SendErrorResponse(w, http.StatusUnauthorized, uutils.UNAUTHORIZED, err.Error())
+		response.WriteError(w, http.StatusUnauthorized, err)
 		return
 	}
 
@@ -327,7 +284,7 @@ func (h *AuthHandler) publicKey(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("Error getting public key", slog.Any("error", err))
 		status := response.ErrorToStatus(err)
-		uutils.SendErrorResponse(w, status, uutils.INTERNAL_ERROR, err.Error())
+		response.WriteError(w, status, err)
 		return
 	}
 

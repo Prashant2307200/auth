@@ -1,42 +1,46 @@
 ## Learned Workspace Facts
 
 ### Auth Service Codebase Structure
-- Clean Architecture pattern: `cmd/main` (entry), `internal/usecase` (business logic), `infrastructure/transport/http` (handlers), `testutil/` (shared test mocks)
-- `pkg/` contains reusable libraries like hash and token helpers; only add packages here if consumable outside module context
-- `config/` stores YAML per environment; `config/local.yaml` is default for `make run`
+- Clean Architecture: `cmd/main` (entry), `internal/usecase`, `internal/infrastructure/transport/http` (handlers, middleware), `testutil/` (mocks)
+- `pkg/` for reusable libs (hash, validator, invitetoken, ratelimit, db, rdb); add only if usable outside this module
+- `config/` YAML per environment — start from [`config/local.yaml.example`](config/local.yaml.example); Docker uses [`config/docker.yaml`](config/docker.yaml)
+- Product/engineering assessment: [`docs/SAAS_AUTH_SERVICE_ASSESSMENT.md`](docs/SAAS_AUTH_SERVICE_ASSESSMENT.md)
+- Human onboarding: [`README.md`](README.md)
 
 ### Authentication & Security Implementation
-- Uses RSA key-based JWT with public/private key separation for access tokens
-- Bcrypt password hashing with configurable cost factor
-- Token storage: HttpOnly cookies with Secure flag (not in dev) and SameSite=Lax
-- Parameterized queries for SQL injection protection
-- Refresh tokens stored in Redis with 7-day TTL
+- RSA JWT access tokens (RS256); refresh tokens HS256 + Redis (7-day TTL)
+- HttpOnly cookies (`access_token`, `refresh_token`); `Secure` when `ENV` != `dev`, `SameSite=Lax`
+- Team routes under `/api/v1/team/*` require header **`X-Tenant-ID`** (business ID); see `middleware.TenantFromHeader`
+- Rate limit ~5/min on register/login
+- MFA/TOTP support via `github.com/pquerna/otp`; backup codes hashed with SHA256
+- Google SSO via `golang.org/x/oauth2`; links GoogleID to existing users or creates new
+- Multi-session management: Redis stores `session:{id}` JSON + `user_sessions:{userID}` SET
+
+### Password & Email Flows
+- Password reset: token hashed (SHA256), 1h expiry, stored in `password_reset_tokens` table
+- Email verification: `email_verification_tokens` table; user fields `email_verified`, `email_verified_at`
+- Email service interface: `SendInvite`, `SendPasswordReset`, `SendEmailVerification`; default impl is `NoopEmailService`
+- Maileroo integration: `internal/service/maileroo.go` — POST to `smtp.maileroo.com/api/v2/emails`
 
 ### Code Quality Standards
-- Formatting: `go fmt` must pass cleanly
-- Linting: `go vet` has no warnings; no golangci-lint configured
-- No hardcoded defaults for secrets (security risk if present)
-- Structured logging uses `slog` package with request IDs via middleware
-
-### Critical Issues Found
-- Hardcoded secret defaults in `internal/config/config.go` must be removed—only use env vars
-- ✅ FIXED: `TokenService` interface now includes `VerifyToken(ctx, token) (int64, error)` method; updated mock
-- ✅ FIXED: Rate limiter cleanup runs every 5 minutes to prevent memory leak from stale IP entries
-- ✅ FIXED: Context timeout in auth middleware increased from 1s to 5s for reliable DB operations
+- `gofmt`, `go vet`, `golangci-lint` in CI
+- Required env vars: see [`internal/config/config.go`](internal/config/config.go) and [`.env.example`](.env.example)
+- Structured logging: `slog` + request IDs
 
 ### Testing & Coverage
-- Many test files exist (`*_test.go`) but test execution not fully visible
-- Critical paths (auth flow, token validation) need higher coverage
-- No explicit integration tests
+- `*_test.go`, `*_integration_test.go`; CI coverage floor (~65%) + integration job (Postgres + Redis)
+- `make integration-test` runs tests matching `Integration`
 
-### Infrastructure Components
-- Postgres with connection pooling configured
-- Redis for session/refresh token storage
-- Cloudinary for image uploads
-- Rate limiting: 0.083 rps (5/min) on register/login endpoints
+### Infrastructure
+- HTTP default `:8080` (YAML); gRPC **:9090** (`TokenService`, `PublicKeyService`)
+- Health: `/health`, `/health/live`, `/health/ready` (503 when DB/Redis down on ready)
+- Metrics: `/metrics` (Prometheus)
+- Compose: [`compose.yaml`](compose.yaml) — `make compose-up`
 
-### Maintainability Issues
-- Validation logic duplicated: happens in both handler and usecase layers (consolidate to one)
-- Response format inconsistent: `Response` struct has "Error" field used as message, `SuccessResponse` uses proper "message"
-- ProfilePic field not validated before database insert
-- Error handling mixes `log.Fatal` (cmd/main) with `slog` (rest of codebase)
+### Audit Logging
+- Expanded action types: `user.login`, `user.logout`, `user.mfa_enabled`, `user.session_revoked`, etc.
+- API endpoint: `GET /api/v1/audit-logs` with filtering (user_id, action, from, to) and pagination
+
+### Maintainability
+- Validation: `pkg/validator` + usecase-owned rules
+- Canonical OpenAPI: `api/openapi.yaml` — `docs/openapi.yaml` is deprecated reference only
