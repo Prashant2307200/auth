@@ -6,7 +6,6 @@ linters:
     - errcheck
     - staticcheck
     - gosimple
-    - structcheck
     - unused
     - gofmt
     - goimports

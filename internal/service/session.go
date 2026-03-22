@@ -7,15 +7,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/Prashant2307200/auth-service/internal/entity"
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
 
 const (
-	sessionPrefix     = "session:"
+	sessionPrefix      = "session:"
 	userSessionsPrefix = "user_sessions:"
-	sessionTTL        = 7 * 24 * time.Hour
+	sessionTTL         = 7 * 24 * time.Hour
 )
 
 type SessionService struct {

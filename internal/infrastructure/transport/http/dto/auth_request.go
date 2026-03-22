@@ -38,8 +38,8 @@ type VerifyEmailRequest struct {
 }
 
 type MFASetupResponse struct {
-	Secret     string `json:"secret"`
-	QRCodeURI  string `json:"qr_code_uri"`
+	Secret      string   `json:"secret"`
+	QRCodeURI   string   `json:"qr_code_uri"`
 	BackupCodes []string `json:"backup_codes,omitempty"`
 }
 

@@ -29,7 +29,7 @@ func (h *SSOHandler) RegisterRoutes(mux *http.ServeMux) {
 
 func (h *SSOHandler) googleRedirect(w http.ResponseWriter, r *http.Request) {
 	state := generateStateToken()
-	
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     "oauth_state",
 		Value:    state,

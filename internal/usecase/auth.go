@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Prashant2307200/auth-service/internal/entity"
+	"github.com/Prashant2307200/auth-service/internal/infrastructure/repository"
 	"github.com/Prashant2307200/auth-service/internal/usecase/interfaces"
 	"github.com/Prashant2307200/auth-service/pkg/hash"
 	v "github.com/Prashant2307200/auth-service/pkg/validator"
@@ -28,6 +29,8 @@ type AuthUseCase struct {
 	BusinessRepo interfaces.BusinessRepo
 	TokenService interfaces.TokenService
 	CloudService interfaces.CloudService
+	MFAUsecase   MFAUsecase
+	AuditRepo    repository.AuditRepository
 }
 
 func NewAuthUseCase(r interfaces.UserRepo, br interfaces.BusinessRepo, s interfaces.TokenService, c interfaces.CloudService) *AuthUseCase {
@@ -37,6 +40,18 @@ func NewAuthUseCase(r interfaces.UserRepo, br interfaces.BusinessRepo, s interfa
 		TokenService: s,
 		CloudService: c,
 	}
+}
+
+// WithMFA sets the MFA usecase on the auth use case for MFA-integrated login.
+func (uc *AuthUseCase) WithMFA(mfa MFAUsecase) *AuthUseCase {
+	uc.MFAUsecase = mfa
+	return uc
+}
+
+// WithAudit sets the audit repository for logging security events.
+func (uc *AuthUseCase) WithAudit(audit repository.AuditRepository) *AuthUseCase {
+	uc.AuditRepo = audit
+	return uc
 }
 
 func (uc *AuthUseCase) RegisterUser(ctx context.Context, user *entity.User, opts *RegisterOptions) (string, string, error) {
@@ -112,6 +127,7 @@ func (uc *AuthUseCase) RegisterUser(ctx context.Context, user *entity.User, opts
 		if err != nil {
 			return "", "", fmt.Errorf("failed to generate access token: %w", err)
 		}
+		uc.logAudit(ctx, id, entity.AuditActionUserRegister)
 		return accessToken, refreshToken, nil
 	}
 
@@ -119,6 +135,8 @@ func (uc *AuthUseCase) RegisterUser(ctx context.Context, user *entity.User, opts
 	if err != nil {
 		return "", "", fmt.Errorf("failed to generate access token: %w", err)
 	}
+
+	uc.logAudit(ctx, id, entity.AuditActionUserRegister)
 
 	return accessToken, refreshToken, nil
 }
@@ -209,6 +227,14 @@ func (uc *AuthUseCase) LoginUser(ctx context.Context, email string, password str
 		}
 	}
 
+	// Check if MFA is enabled for this user
+	if uc.MFAUsecase != nil {
+		mfaEnabled, mfaErr := uc.MFAUsecase.IsEnabled(ctx, existingUser.ID)
+		if mfaErr == nil && mfaEnabled {
+			return "", "", ErrMFARequired
+		}
+	}
+
 	refreshToken, err := uc.TokenService.GenerateRefreshToken(existingUser.ID)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to generate refresh token: %w", err)
@@ -224,6 +250,8 @@ func (uc *AuthUseCase) LoginUser(ctx context.Context, email string, password str
 		return "", "", fmt.Errorf("failed to generate access token: %w", err)
 	}
 
+	uc.logAudit(ctx, existingUser.ID, entity.AuditActionUserLogin)
+
 	return accessToken, refreshToken, nil
 }
 
@@ -233,6 +261,8 @@ func (uc *AuthUseCase) LogoutUser(ctx context.Context, userID int64) error {
 	if err != nil {
 		return fmt.Errorf("failed to remove refresh token: %w", err)
 	}
+
+	uc.logAudit(ctx, userID, entity.AuditActionUserLogout)
 
 	return nil
 }
@@ -327,4 +357,16 @@ func (uc *AuthUseCase) GetPublicKey() ([]byte, error) {
 
 func (uc *AuthUseCase) GenerateUploadSignature(ctx context.Context, userID int64) (*interfaces.UploadSignature, error) {
 	return uc.CloudService.GenerateUploadSignature(ctx, userID)
+}
+
+func (uc *AuthUseCase) logAudit(ctx context.Context, userID int64, action string) {
+	if uc.AuditRepo == nil {
+		return
+	}
+	if err := uc.AuditRepo.Log(ctx, &entity.AuditLog{
+		UserID: userID,
+		Action: action,
+	}); err != nil {
+		slog.Error("failed to log audit event", slog.String("action", action), slog.Int64("user_id", userID), slog.Any("error", err))
+	}
 }

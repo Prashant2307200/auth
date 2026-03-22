@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"log"
 	"log/slog"
 	"net"
@@ -126,7 +127,7 @@ func main() {
 	businessRouter := http.NewServeMux()
 	businessHandler.RegisterRoutes(businessRouter)
 
-	authUseCase := usecase.NewAuthUseCase(userRepo, businessRepo, tokenService, cloudService)
+	authUseCase := usecase.NewAuthUseCase(userRepo, businessRepo, tokenService, cloudService).WithAudit(auditRepo)
 	authHandler := handler.NewAuthHandler(authUseCase, cfg.Env)
 
 	var emailService usecase.EmailService = service.NoopEmailService{}
@@ -140,15 +141,27 @@ func main() {
 	}
 
 	passwordResetRepo := repository.NewPasswordResetRepo(database.Db)
-	passwordResetUC := usecase.NewPasswordResetUsecase(userRepo, passwordResetRepo, emailService, tokenService)
+	passwordResetUC := usecase.NewPasswordResetUsecase(userRepo, passwordResetRepo, emailService, tokenService, auditRepo)
 	passwordResetHandler := handler.NewPasswordResetHandler(passwordResetUC)
 
 	emailVerificationRepo := repository.NewEmailVerificationRepo(database.Db)
-	emailVerificationUC := usecase.NewEmailVerificationUsecase(userRepo, emailVerificationRepo, emailService)
+	emailVerificationUC := usecase.NewEmailVerificationUsecase(userRepo, emailVerificationRepo, emailService, auditRepo)
 	emailVerificationHandler := handler.NewEmailVerificationHandler(emailVerificationUC)
 
 	mfaRepo := repository.NewMFARepo(database.Db)
-	mfaUC := usecase.NewMFAUsecase(userRepo, mfaRepo)
+	var mfaEncryptionKey []byte
+	if cfg.MFA.EncryptionKey != "" {
+		var decErr error
+		mfaEncryptionKey, decErr = hex.DecodeString(cfg.MFA.EncryptionKey)
+		if decErr != nil || len(mfaEncryptionKey) != 32 {
+			slog.Error("MFA_ENCRYPTION_KEY must be 64 hex characters (32 bytes). Generate with: openssl rand -hex 32")
+			os.Exit(1)
+		}
+	} else {
+		slog.Warn("MFA_ENCRYPTION_KEY not set — TOTP secrets will be stored unencrypted. Set this in production!")
+	}
+	mfaUC := usecase.NewMFAUsecase(userRepo, mfaRepo, auditRepo, mfaEncryptionKey)
+	authUseCase.WithMFA(mfaUC)
 	mfaHandler := handler.NewMFAHandler(mfaUC, userRepo)
 
 	authRouter := http.NewServeMux()
